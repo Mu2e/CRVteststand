@@ -1,0 +1,22 @@
+crvraw	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvraw/
+crvparsed	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvparsed/
+crvcalib	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvcalib/
+crvreco	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvreco/
+
+preSignalSamples	55
+signalRegionStart	55
+signalRegionEnd	90
+referenceTemperature	25
+PETemperatureIntercept	85.12
+calibTemperatureIntercept	69.00
+
+calibNoiseThreshold	5
+calibMinConst	270
+calibMaxConst	460
+calibMinNoise	0.5e6
+
+recoMinPE	39
+recoMaxPE	52
+recoMinPEfarSide	26
+recoMaxPEfarSide	35
+
