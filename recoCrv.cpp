@@ -34,6 +34,7 @@
 
 const float CRV_TDC_RATE    = 159.324e6;  // Hz
 const float RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
+const int BOARD_STATUS_REGISTERS=22;
 
 class Calibration
 {
@@ -655,9 +656,79 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &area)
     area = fit.GetParameter(2);
 }
 
+void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, const int nEvents)
+{
+  if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
+
+  int *boardStatus = new int[numberOfFebs*BOARD_STATUS_REGISTERS];
+  treeSpills->SetBranchAddress("spill_boardStatus", boardStatus);
+  int nSpills=treeSpills->GetEntries();
+
+  bool  foundFeb[numberOfFebs]={false};
+  int   febID[numberOfFebs]={0};
+  int   pipeline[numberOfFebs]={0};
+  int   samples[numberOfFebs]={0};
+  int   nSpillsActual[numberOfFebs]={0};
+  float febTemperature[numberOfFebs]={0};
+  float supplyMonitors[numberOfFebs][8]={0};
+  float biasVoltages[numberOfFebs][8]={0};
+  for(int iSpill=0; iSpill<nSpills; ++iSpill)
+  {
+    for(int feb=0; feb<numberOfFebs; ++feb)
+    {
+      treeSpills->GetEntry(iSpill);
+      if(boardStatus[feb*BOARD_STATUS_REGISTERS]==-1) continue; //FEB was not read for this spill
+
+      if(!foundFeb[feb])
+      {
+        foundFeb[feb]=true;
+        febID[feb]=boardStatus[feb*BOARD_STATUS_REGISTERS];
+        pipeline[feb]=boardStatus[feb*BOARD_STATUS_REGISTERS+20];
+        samples[feb]=boardStatus[feb*BOARD_STATUS_REGISTERS+21];
+      }
+
+      ++nSpillsActual[feb];
+      febTemperature[feb]+=boardStatus[feb*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
+      supplyMonitors[feb][0]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+0]*0.001;
+      supplyMonitors[feb][1]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+1]*0.001;
+      supplyMonitors[feb][2]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+2]*0.002;
+      supplyMonitors[feb][3]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+3]*0.004;
+      supplyMonitors[feb][4]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+4]*0.001;
+      supplyMonitors[feb][5]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+5]*0.002;
+      supplyMonitors[feb][6]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+6]*0.006;
+      supplyMonitors[feb][7]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+7]/1000.0;
+      for(int i=0; i<8; ++i) biasVoltages[feb][i]+=boardStatus[feb*BOARD_STATUS_REGISTERS+11+i]*0.02;
+    }
+  }
+
+
+  txtFile<<"Number of events: "<<nEvents<<"      Number of spills expected: "<<nSpills<<std::endl;
+
+  txtFile<<std::fixed;
+  txtFile<<std::setprecision(2);
+  txtFile<<"FEB  ID   spills  FEBtemp  15Vmon  10Vmon  5Vmon   -5Vmon  3.3Vmon 2.5Vmon 1.8Vmon  1.2Vmon"<<std::endl;
+  for(int feb=0; feb<numberOfFebs; ++feb)
+  {
+    txtFile<<feb<<"    "<<febID[feb]<<"   "<<nSpillsActual[feb]<<"     "<<febTemperature[feb]/nSpillsActual[feb]<<"    ";
+    for(int i=0; i<8; ++i) txtFile<<supplyMonitors[feb][i]/nSpillsActual[feb]<<"    ";
+    txtFile<<std::endl;
+  }
+
+  txtFile<<"FEB  bias0  bias1  bias2  bias3  bias4  bias5  bias6  bias7  pipeline  samples"<<std::endl;
+  for(int feb=0; feb<numberOfFebs; ++feb)
+  {
+    txtFile<<feb<<"    ";
+    for(int i=0; i<8; ++i) txtFile<<biasVoltages[feb][i]/nSpillsActual[feb]<<"  ";
+    txtFile<<pipeline[feb]<<"         "<<samples[feb]<<"  ";
+    txtFile<<std::endl;
+  }
+
+  txtFile<<std::endl;
+}
+
 void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
                    const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> areas[2],
-                   const std::vector<float> &meanTemperatures)
+                   const std::vector<float> &meanTemperatures, TTree *treeSpills, const int nEvents)
 {
   std::ifstream settingsFile;
   settingsFile.open("config.txt");
@@ -679,12 +750,15 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   txtFile<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
   txtFile<<"calibTemperatureIntercept: "<<calibTemperatureIntercept<<" deg C  ";
   txtFile<<"PETemperatureIntercept: "<<PETemperatureIntercept<<" deg C"<<std::endl;
-  txtFile<<"  FEB  Channel  PE      PE Temp Corr    FWHM                   Signals                   meanTemp"<<std::endl;
+  
+  BoardRegisters(treeSpills, txtFile, numberOfFebs, nEvents);
+
+  txtFile<<"  FEB  Channel     PE     PE Temp Corr    FWHM                   Signals                meanTemp"<<std::endl;
 
   std::cout<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
   std::cout<<"calibTemperatureIntercept: "<<calibTemperatureIntercept<<" deg C  ";
   std::cout<<"PETemperatureIntercept: "<<PETemperatureIntercept<<" deg C"<<std::endl;
-  std::cout<<"         FEB  Channel  PE      PE Temp Corr    FWHM                   Signals                  meanTemp"<<std::endl;
+  std::cout<<"         FEB  Channel     PE     PE Temp Corr    FWHM                   Signals               meanTemp"<<std::endl;
 
   for(int i=0; i<numberOfFebs; i++)
   {
@@ -939,6 +1013,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   if(!recoFile.IsOpen()) {std::cerr<<"Could not create reco file for run "<<runNumber<<std::endl; exit(1);}
 
   TTree *recoTree = new TTree("run","run");
+  TTree *recoTreeSpill = treeSpills->CloneTree();
 	
   int numberOfFebs;
   int channelsPerFeb;
@@ -1022,13 +1097,14 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
     }
   }
 
-  StorePEyields(txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, areas, meanTemperatures);
+  StorePEyields(txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, areas, meanTemperatures, treeSpills, nEvents);
 
   Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms);
 
   c0.Print(Form("%s]", pdfFileName.c_str()), "pdf");
 
   recoTree->Write("", TObject::kOverwrite);
+  recoTreeSpill->Write("", TObject::kOverwrite);
 
   recoFile.Close();
   file.Close();

@@ -3,9 +3,9 @@ crvparsed	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvparsed/
 crvcalib	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvcalib/
 crvreco	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvreco/
 
-preSignalSamples	55
-signalRegionStart	55
-signalRegionEnd	90
+preSignalSamples	75
+signalRegionStart	75
+signalRegionEnd	127
 referenceTemperature	25
 PETemperatureIntercept	85.12
 calibTemperatureIntercept	69.00
