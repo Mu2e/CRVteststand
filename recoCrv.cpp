@@ -709,18 +709,32 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   txtFile<<"FEB  ID   spills  FEBtemp  15Vmon  10Vmon  5Vmon   -5Vmon  3.3Vmon 2.5Vmon 1.8Vmon  1.2Vmon"<<std::endl;
   for(int feb=0; feb<numberOfFebs; ++feb)
   {
-    txtFile<<feb<<"    "<<febID[feb]<<"   "<<nSpillsActual[feb]<<"     "<<febTemperature[feb]/nSpillsActual[feb]<<"    ";
-    for(int i=0; i<8; ++i) txtFile<<supplyMonitors[feb][i]/nSpillsActual[feb]<<"    ";
-    txtFile<<std::endl;
+    if(nSpillsActual[feb]>0)
+    {
+      txtFile<<feb<<"    "<<febID[feb]<<"   "<<nSpillsActual[feb]<<"     "<<febTemperature[feb]/nSpillsActual[feb]<<"    ";
+      for(int i=0; i<8; ++i) txtFile<<supplyMonitors[feb][i]/nSpillsActual[feb]<<"    ";
+      txtFile<<std::endl;
+    }
+    else
+    {
+      txtFile<<feb<<"    no spills"<<std::endl;
+    }
   }
 
   txtFile<<"FEB  bias0  bias1  bias2  bias3  bias4  bias5  bias6  bias7  pipeline  samples"<<std::endl;
   for(int feb=0; feb<numberOfFebs; ++feb)
   {
-    txtFile<<feb<<"    ";
-    for(int i=0; i<8; ++i) txtFile<<biasVoltages[feb][i]/nSpillsActual[feb]<<"  ";
-    txtFile<<pipeline[feb]<<"         "<<samples[feb]<<"  ";
-    txtFile<<std::endl;
+    if(nSpillsActual[feb]>0)
+    {
+      txtFile<<feb<<"    ";
+      for(int i=0; i<8; ++i) txtFile<<biasVoltages[feb][i]/nSpillsActual[feb]<<"  ";
+      txtFile<<pipeline[feb]<<"         "<<samples[feb]<<"  ";
+      txtFile<<std::endl;
+    }
+    else
+    {
+      txtFile<<feb<<"    no spills"<<std::endl;
+    }
   }
 
   txtFile<<std::endl;
@@ -746,13 +760,12 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
 
   std::ofstream txtFile;
   txtFile.open(txtFileName.c_str());
+  
+  BoardRegisters(treeSpills, txtFile, numberOfFebs, nEvents);
 
   txtFile<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
   txtFile<<"calibTemperatureIntercept: "<<calibTemperatureIntercept<<" deg C  ";
   txtFile<<"PETemperatureIntercept: "<<PETemperatureIntercept<<" deg C"<<std::endl;
-  
-  BoardRegisters(treeSpills, txtFile, numberOfFebs, nEvents);
-
   txtFile<<"  FEB  Channel     PE     PE Temp Corr    FWHM                   Signals                meanTemp"<<std::endl;
 
   std::cout<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
