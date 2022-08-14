@@ -49,6 +49,9 @@ class EventTree
 
   //temp event data
   std::map<int,Event> _spill;    //map key is the event number
+  bool   _missingFebs;           //missing FEBs or incomplete stabs (while stab marker was present)
+  bool   _spillStored;           //spill was stored in the event tree
+  size_t _nEventsActual;         //number of events that were stored in the event tree
 
   //tree event data
   int    _numberOfFebs;
@@ -106,6 +109,9 @@ EventTree::EventTree(const std::string &runNumber, const std::string &inFileName
 
 void EventTree::Clear()
 {
+  _missingFebs=false;
+  _spillStored=true;
+  _nEventsActual=0;
   for(int i=0; i<_numberOfFebs*BOARD_STATUS_REGISTERS; i++)
   {
 
@@ -142,6 +148,8 @@ void EventTree::PrepareTree()
 
   _treeSpills->Branch("spill_num", &_spillNumber, "spill_num/I");
   _treeSpills->Branch("spill_nevents", &_nEvents, "spill_nevents/I");
+  _treeSpills->Branch("spill_neventsActual", &_nEventsActual, "spill_neventsActual/I");
+  _treeSpills->Branch("spill_stored", &_spillStored, "spill_stored/O");
   _treeSpills->Branch("spill_number_of_febs", &_numberOfFebs, "spill_number_of_febs/I");
   _treeSpills->Branch("spill_channels_per_feb", &_channelsPerFeb, "spill_channels_per_feb/I");
   _treeSpills->Branch("spill_number_of_samples", &_numberOfSamples, "spill_number_of_samples/I");
@@ -353,7 +361,16 @@ std::cout<<"start new spill"<<std::endl;
   
     if(line.find("--Begin of spill")>1) continue;  //not at the spill, yet (at 0: text file, at 1: binary file)
     if(line.at(0)==18) _binary=true;
-    if(!getline(_inFile, line)) return;            //end of file
+
+    std::streampos potential2ndBeginOfSpill = _inFile.tellg();
+    if(!getline(_inFile, line)) return;   //end of file
+    if(line.find("--Begin of spill")<=1)        //Found a subsequent "Begin of spill" marker.
+    {                                           //This can happen, if there was a problem with
+      _inFile.seekg(potential2ndBeginOfSpill);  //the FEB from the previous "Begin of spill" marker.
+      _missingFebs=true;
+      std::cout<<"missing data for FEB. skipping this FEB."<<std::endl;
+      continue;
+    }
 
     //Check whether there is stab data in the file
     std::vector<float> CMBtemperatures;
@@ -362,7 +379,12 @@ std::cout<<"start new spill"<<std::endl;
     int boardStatusTmp[BOARD_STATUS_REGISTERS];
     if(line.find("stab")<2)
     {
-      if(!ReadStab(CMBtemperatures,boardStatusTmp)) return;
+      if(!ReadStab(CMBtemperatures,boardStatusTmp))
+      {
+        std::cout<<"incomplete stabs. skipping this FEB."<<std::endl;
+        _missingFebs=true;
+        continue;
+      }
       if(!getline(_inFile, line)) return;
     }
 
@@ -374,7 +396,7 @@ std::cout<<"start new spill"<<std::endl;
     int newfeb = std::stoi(line.substr(searchStringPos+searchString.size()));
     if(newfeb<=feb)
     {
-      //seems to have found a new spill. go back in the file to the beginning of this spill
+      //seems to have found a new spill (and not just a new FEB of the same spill). go back in the file to the beginning of this spill
       _inFile.seekg(startOfSpill);
       return;
     }
@@ -460,11 +482,18 @@ std::cout<<"start new spill"<<std::endl;
 
 void EventTree::FillSpill()
 {
-  int nGoodEvents=0;
-
   if(_spill.empty())
   {
     std::cout<<"Spill "<<_spillNumber<<" is empty."<<std::endl;
+    return;
+  }
+
+  if(_missingFebs)
+  {
+    std::cout<<"Spill "<<_spillNumber<<" has a missing FEB or incomplete stabs."<<std::endl;
+    std::cout<<"Events of this spill are not stored, but spill information gets added to spill tree."<<std::endl;
+    _spillStored=false;
+    _treeSpills->Fill();
     return;
   }
 
@@ -479,7 +508,7 @@ void EventTree::FillSpill()
     _eventNumber = event->first;
 
     const Event &theEvent = event->second;
-    if(theEvent._badEvent) continue;
+    if(theEvent._badEvent) continue;   //don't store this event, even if it was bad in only one FEB
 
     for(int feb=0; feb<_numberOfFebs; feb++)
     {
@@ -533,12 +562,12 @@ void EventTree::FillSpill()
     }//febs
 
     _tree->Fill();
-    nGoodEvents++;
+    ++_nEventsActual;
   }//events
 
   _treeSpills->Fill();
 
-  std::cout<<"Found "<<nGoodEvents<<" good events out of "<<_nEvents<<" total events in spill "<<_spillNumber<<"."<<std::endl;
+  std::cout<<"Found "<<_nEventsActual<<" good events out of "<<_nEvents<<" total events in spill "<<_spillNumber<<"."<<std::endl;
 }
 
 void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &outFileName)
