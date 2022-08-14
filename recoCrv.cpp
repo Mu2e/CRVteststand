@@ -656,27 +656,44 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &area)
     area = fit.GetParameter(2);
 }
 
-void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, const int nEvents)
+void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs)
 {
   if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
 
-  int *boardStatus = new int[numberOfFebs*BOARD_STATUS_REGISTERS];
+  int   nEventsExpected;
+  int   nEventsActual;
+  bool  spillStored;
+  int  *boardStatus = new int[numberOfFebs*BOARD_STATUS_REGISTERS];
+  treeSpills->SetBranchAddress("spill_nevents", &nEventsExpected);
+  treeSpills->SetBranchAddress("spill_neventsActual", &nEventsActual);
+  treeSpills->SetBranchAddress("spill_stored", &spillStored);
   treeSpills->SetBranchAddress("spill_boardStatus", boardStatus);
-  int nSpills=treeSpills->GetEntries();
+  int nEventsExpectedTotal=0;   //of the spills that were stored
+  int nEventsActualTotal=0;
+  int nSpillsExpected=treeSpills->GetEntries();
+  int nSpillsActual=0;
 
   bool  foundFeb[numberOfFebs]={false};
   int   febID[numberOfFebs]={0};
   int   pipeline[numberOfFebs]={0};
   int   samples[numberOfFebs]={0};
-  int   nSpillsActual[numberOfFebs]={0};
+  int   nFebSpillsActual[numberOfFebs]={0};
   float febTemperature[numberOfFebs]={0};
   float supplyMonitors[numberOfFebs][8]={0};
   float biasVoltages[numberOfFebs][8]={0};
-  for(int iSpill=0; iSpill<nSpills; ++iSpill)
+  for(int iSpill=0; iSpill<nSpillsExpected; ++iSpill)
   {
+    treeSpills->GetEntry(iSpill);
+
+    if(spillStored)
+    {
+      nEventsExpectedTotal+=nEventsExpected;
+      nEventsActualTotal+=nEventsActual;
+      ++nSpillsActual;
+    }
+
     for(int feb=0; feb<numberOfFebs; ++feb)
     {
-      treeSpills->GetEntry(iSpill);
       if(boardStatus[feb*BOARD_STATUS_REGISTERS]==-1) continue; //FEB was not read for this spill
 
       if(!foundFeb[feb])
@@ -687,7 +704,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
         samples[feb]=boardStatus[feb*BOARD_STATUS_REGISTERS+21];
       }
 
-      ++nSpillsActual[feb];
+      ++nFebSpillsActual[feb];
       febTemperature[feb]+=boardStatus[feb*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
       supplyMonitors[feb][0]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+0]*0.001;
       supplyMonitors[feb][1]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+1]*0.001;
@@ -696,23 +713,26 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
       supplyMonitors[feb][4]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+4]*0.001;
       supplyMonitors[feb][5]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+5]*0.002;
       supplyMonitors[feb][6]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+6]*0.006;
-      supplyMonitors[feb][7]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+7]/1000.0;
+      supplyMonitors[feb][7]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+7]*0.001;
       for(int i=0; i<8; ++i) biasVoltages[feb][i]+=boardStatus[feb*BOARD_STATUS_REGISTERS+11+i]*0.02;
     }
   }
 
 
-  txtFile<<"Number of events: "<<nEvents<<"      Number of spills expected: "<<nSpills<<std::endl;
+  txtFile<<"Expected spills: "<<nSpillsExpected<<std::endl;
+  txtFile<<"Stored spills:   "<<nSpillsActual<<std::endl;
+  txtFile<<"Expected number of events (of all stored spills): "<<nEventsExpectedTotal<<std::endl;
+  txtFile<<"Actual number of events                         : "<<nEventsActualTotal<<std::endl;
 
   txtFile<<std::fixed;
   txtFile<<std::setprecision(2);
   txtFile<<"FEB  ID   spills  FEBtemp  15Vmon  10Vmon  5Vmon   -5Vmon  3.3Vmon 2.5Vmon 1.8Vmon  1.2Vmon"<<std::endl;
   for(int feb=0; feb<numberOfFebs; ++feb)
   {
-    if(nSpillsActual[feb]>0)
+    if(nFebSpillsActual[feb]>0)
     {
-      txtFile<<feb<<"    "<<febID[feb]<<"   "<<nSpillsActual[feb]<<"     "<<febTemperature[feb]/nSpillsActual[feb]<<"    ";
-      for(int i=0; i<8; ++i) txtFile<<supplyMonitors[feb][i]/nSpillsActual[feb]<<"    ";
+      txtFile<<feb<<"    "<<febID[feb]<<"   "<<nFebSpillsActual[feb]<<"     "<<febTemperature[feb]/nFebSpillsActual[feb]<<"    ";
+      for(int i=0; i<8; ++i) txtFile<<supplyMonitors[feb][i]/nFebSpillsActual[feb]<<"    ";
       txtFile<<std::endl;
     }
     else
@@ -724,10 +744,10 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   txtFile<<"FEB  bias0  bias1  bias2  bias3  bias4  bias5  bias6  bias7  pipeline  samples"<<std::endl;
   for(int feb=0; feb<numberOfFebs; ++feb)
   {
-    if(nSpillsActual[feb]>0)
+    if(nFebSpillsActual[feb]>0)
     {
       txtFile<<feb<<"    ";
-      for(int i=0; i<8; ++i) txtFile<<biasVoltages[feb][i]/nSpillsActual[feb]<<"  ";
+      for(int i=0; i<8; ++i) txtFile<<biasVoltages[feb][i]/nFebSpillsActual[feb]<<"  ";
       txtFile<<pipeline[feb]<<"         "<<samples[feb]<<"  ";
       txtFile<<std::endl;
     }
@@ -761,7 +781,7 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   std::ofstream txtFile;
   txtFile.open(txtFileName.c_str());
   
-  BoardRegisters(treeSpills, txtFile, numberOfFebs, nEvents);
+  BoardRegisters(treeSpills, txtFile, numberOfFebs);
 
   txtFile<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
   txtFile<<"calibTemperatureIntercept: "<<calibTemperatureIntercept<<" deg C  ";
