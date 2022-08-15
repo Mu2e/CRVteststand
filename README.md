@@ -1,7 +1,7 @@
 # CRVteststand
 Code to manage data from the CRV test stand.  
 
-#Build:  
+Build:  
 source /cvmfs/mu2e.opensciencegrid.org/setupmu2e-art.sh  
 muse setup  
 mkdir workDir  
