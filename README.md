@@ -7,6 +7,7 @@ muse setup
 mkdir workDir  
 cd workDir  
 git clone git@github.com:Mu2e/CRVteststand.git  
+cd CRVteststand  
 make  
 
 Run:  
