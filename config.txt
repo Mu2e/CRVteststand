@@ -1,10 +1,10 @@
-crvraw	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvraw/
-crvparsed	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvparsed/
-crvcalib	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvcalib/
-crvreco	/pnfs/mu2e/scratch/outstage/ehrlich/wideband8/crvreco/
+crvraw	/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvraw/
+crvparsed	/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvparsed/
+crvcalib	/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvcalib/
+crvreco	/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/
 
-preSignalSamples	75
-signalRegionStart	75
+preSignalSamples	60
+signalRegionStart	60
 signalRegionEnd	127
 referenceTemperature	25
 PETemperatureIntercept	85.12

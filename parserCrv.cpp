@@ -62,6 +62,9 @@ class EventTree
   int    _eventNumber;
   int   *_boardStatus;  //need one board status for each FEB
 
+  //time stamp stored only for the first spill of the first subrun
+  struct tm  _timestamp;
+
 //  int    *_tdcSinceSpill;  //OLD
   long   *_tdcSinceSpill;
   double *_timeSinceSpill;
@@ -154,6 +157,15 @@ void EventTree::PrepareTree()
   _treeSpills->Branch("spill_channels_per_feb", &_channelsPerFeb, "spill_channels_per_feb/I");
   _treeSpills->Branch("spill_number_of_samples", &_numberOfSamples, "spill_number_of_samples/I");
   _treeSpills->Branch("spill_boardStatus", _boardStatus, Form("spill_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
+  _treeSpills->Branch("spill_timestamp_sec", &_timestamp.tm_sec);
+  _treeSpills->Branch("spill_timestamp_min", &_timestamp.tm_min);
+  _treeSpills->Branch("spill_timestamp_hour", &_timestamp.tm_hour);
+  _treeSpills->Branch("spill_timestamp_mday", &_timestamp.tm_mday);
+  _treeSpills->Branch("spill_timestamp_mon", &_timestamp.tm_mon);
+  _treeSpills->Branch("spill_timestamp_year", &_timestamp.tm_year);
+  _treeSpills->Branch("spill_timestamp_wday", &_timestamp.tm_wday);
+  _treeSpills->Branch("spill_timestamp_yday", &_timestamp.tm_yday);
+  _treeSpills->Branch("spill_timestamp_isdst", &_timestamp.tm_isdst);
 }
 
 void EventTree::Finish()
@@ -349,6 +361,7 @@ bool EventTree::ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD
 void EventTree::ReadSpill()
 {
   _spill.clear();
+  _timestamp = {0,0,0,0,0,0,0,0,0};
 
 std::cout<<"start new spill"<<std::endl;
   int feb=-1;
@@ -358,6 +371,15 @@ std::cout<<"start new spill"<<std::endl;
     std::streampos startOfSpill = _inFile.tellg();
     std::string line;
     if(!getline(_inFile, line)) return;
+
+    if(line.find("START OF RUN")!=std::string::npos)
+    {
+      std::string timestampString=line.substr(19);
+      if(strptime(timestampString.c_str(), "%m/%d/%Y %I:%M:%S %p", &_timestamp)!=NULL)
+      {
+        std::cout<<"Found time stamp "<<timestampString<<std::endl;
+      }
+    }
   
     if(line.find("--Begin of spill")>1) continue;  //not at the spill, yet (at 0: text file, at 1: binary file)
     if(line.at(0)==18) _binary=true;
