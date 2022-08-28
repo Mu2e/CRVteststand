@@ -35,15 +35,16 @@
 const float CRV_TDC_RATE    = 159.324e6;  // Hz
 const float RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
 const int BOARD_STATUS_REGISTERS=22;
+const float DEFAULT_BETA=16.0;
 
 class Calibration
 {
   public:
   Calibration(const std::string &calibFileName, const int numberOfFebs, const int channelsPerFeb);
   bool  IsNewFormat() const {return _newFormat;}
-  float GetPedestal(int i, int j) const {return _pedestal[i*_channelsPerFeb+j];}
-  float GetCalibrationFactor(int i, int j) const {return _calibrationFactor[i*_channelsPerFeb+j];}
-  float GetCalibrationFactorTemperatureCorrected(int i, int j) const {return _calibrationFactorTemperatureCorrected[i*_channelsPerFeb+j];}
+  const std::vector<float> &GetPedestals() const {return _pedestal;}
+  const std::vector<float> &GetCalibrationFactors() const {return _calibrationFactor;}
+  const std::vector<float> &GetCalibrationFactorsTemperatureCorrected() const {return _calibrationFactorTemperatureCorrected;}
 
   private:
   int                 _numberOfFebs;
@@ -114,13 +115,14 @@ class CrvRecoEvent
   public:
   CrvRecoEvent(int signalRegionStart, int signalRegionEnd) : _f("peakfitter","[0]*(TMath::Exp(-(x-[1])/[2]-TMath::Exp(-(x-[1])/[2])))"), _signalRegionStart(signalRegionStart), _signalRegionEnd(signalRegionEnd) {Init();} 
   void Init();
+  bool FailedFit(TFitResultPtr fr);
   void PeakFitter(const int* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw);
 
   TF1    _f;
   int    _signalRegionStart;
   int    _signalRegionEnd;
 
-  bool   _valid[2];
+  int    _fitStatus[2]; //0: no pulse, 1: everything ok, 2: fit failed
   float  _PEs[2];
   float  _pulseHeight[2];
   float  _beta[2];
@@ -132,8 +134,24 @@ void CrvRecoEvent::Init()
 {
   for(int i=0; i<2; ++i)
   {
-    _valid[i]=false; _PEs[i]=-1; _pulseHeight[i]=NAN; _beta[i]=NAN; _time[i]=NAN; _LEtime[i]=NAN; _recoStartBin[i]=-1; _recoEndBin[i]=-1;
+    _fitStatus[i]=0; _PEs[i]=-1; _pulseHeight[i]=NAN; _beta[i]=NAN; _time[i]=NAN; _LEtime[i]=NAN; _recoStartBin[i]=-1; _recoEndBin[i]=-1;
   }
+}
+bool CrvRecoEvent::FailedFit(TFitResultPtr fr)
+{
+  if(fr!=0) return true;
+  if(!fr->IsValid()) return true;
+
+  const double tolerance=0.01; //TODO: Try to ask the minimizer, if the parameter is at the limit
+  for(int i=0; i<=2; ++i)
+  {
+    double v=fr->Parameter(i);
+    double lower, upper;
+    fr->ParameterBounds(i,lower,upper);
+    if((v-lower)/(upper-lower)<tolerance) return true;
+    if((upper-v)/(upper-lower)<tolerance) return true;
+  }
+  return false;
 }
 void CrvRecoEvent::PeakFitter(const int* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw)
 {
@@ -156,26 +174,25 @@ void CrvRecoEvent::PeakFitter(const int* data, int numberOfSamples, float pedest
   for(int bin=_signalRegionStart; bin<=std::min(_signalRegionEnd,numberOfSamples); bin++) 
   {
     waveform.push_back(data[bin]-pedestal);
-    if(bin>_signalRegionStart+1 && bin<=std::min(_signalRegionEnd,numberOfSamples)-3)  //don't search for peaks too close to the sample start or end
+    if(bin<=_signalRegionStart) continue;
+
+    if(data[bin-1]<data[bin])  //rising edge
     {
-      if(data[bin-1]<data[bin])  //rising edge
+      peakBinsStart=bin;
+      peakBinsEnd=bin;
+    }
+    if(data[bin-1]==data[bin])  //potentially at a peak with consecutive ADC values which are equal
+    {
+      peakBinsEnd=bin;
+    }
+    if(data[bin-1]>data[bin])  //falling edge
+    {
+      if(peakBinsStart>0)   //found a peak
       {
-        peakBinsStart=bin;
-        peakBinsEnd=bin;
+        if(data[peakBinsStart]-pedestal>6) //ignores fluctuations of the baseline
+          peaks.emplace_back(data[peakBinsStart]-pedestal, std::make_pair(peakBinsStart,peakBinsEnd));
       }
-      if(data[bin-1]==data[bin])  //potentially at a peak with consecutive ADC values which are equal
-      {
-        peakBinsEnd=bin;
-      }
-      if(data[bin-1]>data[bin])  //falling edge
-      {
-        if(peakBinsStart>0)   //found a peak
-        {
-          if(data[peakBinsStart]-pedestal>6) //ignores fluctuations of the baseline
-            peaks.emplace_back(data[peakBinsStart]-pedestal, std::make_pair(peakBinsStart,peakBinsEnd));
-        }
-        peakBinsStart=0;  //so that the loop has to wait for the next rising edge
-      }
+      peakBinsStart=0;  //so that the loop has to wait for the next rising edge
     }
   }
 
@@ -190,19 +207,19 @@ void CrvRecoEvent::PeakFitter(const int* data, int numberOfSamples, float pedest
     peakBinsEnd   = peaks[iPeak].second.second-_signalRegionStart;
     float averagePeakBin = 0.5*(peakBinsStart+peakBinsEnd);
 
-    //from Offline's CRVResponse
     //select a range of up to 4 points before and after the peak
     //-find up to 5 points before and after the peak for which the waveform is stricly decreasing
     //-remove 1 point on each side. this removes potentially "bad points" belonging to a second pulse (i.e. in double pulses)
+
     int nBins = waveform.size();
-    _recoStartBin[i]=peakBinsStart;
-    _recoEndBin[i]=peakBinsEnd;
+    _recoStartBin[i]=peakBinsStart-1;
+    _recoEndBin[i]=peakBinsEnd+1;
     for(int bin=peakBinsStart-1; bin>=0 && bin>=peakBinsStart-5; bin--)
     {
       if(waveform[bin]<=waveform[bin+1]) _recoStartBin[i]=bin;
       else break;
     }
-    for(int bin=peakBinsEnd+1; bin<nBins && bin<=peakBinsEnd+5; bin++)
+    for(int bin=peakBinsEnd+1; bin<=nBins && bin<=peakBinsEnd+5; bin++)
     {
       if(waveform[bin]<=waveform[bin-1]) _recoEndBin[i]=bin;
       else break;
@@ -223,24 +240,22 @@ void CrvRecoEvent::PeakFitter(const int* data, int numberOfSamples, float pedest
     //set the fit function
     _f.SetParameter(0, waveform[peakBinsStart]*TMath::E());
     _f.SetParameter(1, averagePeakBin*binWidth);
-    _f.SetParameter(2, 16.0);
+    _f.SetParameter(2, DEFAULT_BETA);
+    _f.SetParLimits(0, waveform[peakBinsStart]*TMath::E()*0.7,waveform[peakBinsStart]*TMath::E()*1.5);
+    _f.SetParLimits(1, averagePeakBin*binWidth-15.0,averagePeakBin*binWidth+15.0);
+    _f.SetParLimits(2, 5.0, 40.0);
 
     //do the fit
     TFitResultPtr fr = g.Fit(&_f,(draw && i==0)?"QS":"NQS");
-    bool invalidFit=false;
-    if(!fr->IsValid()) invalidFit=true;
-    if(fr->Parameter(0)<=0 || fr->Parameter(2)<=0) invalidFit=true;
-    if(fr->Parameter(2)<5 || fr->Parameter(2)>50) invalidFit=true;
-    if(fabs(fr->Parameter(1)-averagePeakBin*binWidth)>30) invalidFit=true;
-    if(fr->Parameter(0)/(waveform[peakBinsStart]*TMath::E())>1.5) invalidFit=true;
+    bool invalidFit=FailedFit(fr);
     if(invalidFit)
     {
-      _PEs[i]         = waveform[peakBinsStart]*TMath::E()*16.0/calibrationFactor; //using maximum ADC value of this pulse and a typical value of beta
+      _PEs[i]         = waveform[peakBinsStart]*TMath::E()*DEFAULT_BETA/calibrationFactor; //using maximum ADC value of this pulse and a typical value of beta
       _pulseHeight[i] = waveform[peakBinsStart];
       _time[i]        = averagePeakBin*binWidth;
-      _beta[i]        = NAN;   //FIXME should the default value of beta=19.0 be used here?
-      _LEtime[i]      = _time[i]-1.385*16.0;   //time-1.385*beta for 20% pulse height
-      _valid[i]       = true;  //FIXME need another variable for fits which used the pulse height
+      _beta[i]        = DEFAULT_BETA; 
+      _LEtime[i]      = _time[i]-0.985*DEFAULT_BETA;   //time-0.985*beta for 50% pulse height
+      _fitStatus[i]   = 2;
       draw            = false;
     }
     else
@@ -249,8 +264,8 @@ void CrvRecoEvent::PeakFitter(const int* data, int numberOfSamples, float pedest
       _pulseHeight[i] = fr->Parameter(0)/TMath::E();
       _time[i]        = fr->Parameter(1);
       _beta[i]        = fr->Parameter(2);
-      _LEtime[i]      = _time[i]-1.385*_beta[i];   //at 20% of pulse height
-      _valid[i]       = true;
+      _LEtime[i]      = _time[i]-0.985*_beta[i];   //at 50% of pulse height
+      _fitStatus[i]   = 1;
     }
 
     _time[i]+=_signalRegionStart*binWidth;
@@ -319,7 +334,7 @@ class CrvEvent
   int    *_adc;
   float  *_temperature;
 
-  bool   *_valid;
+  int    *_fitStatus;
   float  *_PEs;
   float  *_PEsTemperatureCorrected;
   float  *_pulseHeight;
@@ -330,7 +345,7 @@ class CrvEvent
   int    *_recoEndBin;
   float  *_pedestal;
 
-  bool   *_validReflectedPulse;
+  int    *_fitStatusReflectedPulse;
   float  *_PEsReflectedPulse;
   float  *_PEsTemperatureCorrectedReflectedPulse;
   float  *_pulseHeightReflectedPulse;
@@ -384,7 +399,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   tree->SetBranchAddress("runtree_adc", _adc);
   tree->SetBranchAddress("runtree_temperature", _temperature);
 
-  _valid                   = new bool[_numberOfFebs*_channelsPerFeb];
+  _fitStatus               = new int[_numberOfFebs*_channelsPerFeb];
   _PEs                     = new float[_numberOfFebs*_channelsPerFeb];
   _PEsTemperatureCorrected = new float[_numberOfFebs*_channelsPerFeb];
   _pulseHeight             = new float[_numberOfFebs*_channelsPerFeb];
@@ -395,7 +410,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _recoEndBin              = new int[_numberOfFebs*_channelsPerFeb];
   _pedestal                = new float[_numberOfFebs*_channelsPerFeb];
 
-  _validReflectedPulse                   = new bool[_numberOfFebs*_channelsPerFeb];
+  _fitStatusReflectedPulse               = new int[_numberOfFebs*_channelsPerFeb];
   _PEsReflectedPulse                     = new float[_numberOfFebs*_channelsPerFeb];
   _PEsTemperatureCorrectedReflectedPulse = new float[_numberOfFebs*_channelsPerFeb];
   _pulseHeightReflectedPulse             = new float[_numberOfFebs*_channelsPerFeb];
@@ -409,7 +424,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("eventNumber", &_eventNumber, "eventNumber/I");
   recoTree->Branch("tdcSinceSpill", _tdcSinceSpill, Form("tdcSinceSpill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("timeSinceSpill", _timeSinceSpill, Form("timeSinceSpill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
-  recoTree->Branch("valid", _valid, Form("valid[%i][%i]/O",_numberOfFebs,_channelsPerFeb));
+  recoTree->Branch("fitStatus", _fitStatus, Form("fitStatus[%i][%i]/O",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEs", _PEs, Form("PEs[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEsTemperatureCorrected", _PEsTemperatureCorrected, Form("PEsTemperatureCorrected[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("temperature", _temperature, Form("temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
@@ -421,7 +436,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("recoStartBin", _recoStartBin, Form("recoStartBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoEndBin", _recoEndBin, Form("recoEndBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("pedestal", _pedestal, Form("pedestal[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
-  recoTree->Branch("validReflectedPulse", _validReflectedPulse, Form("validReflectedPulse[%i][%i]/O",_numberOfFebs,_channelsPerFeb));
+  recoTree->Branch("fitStatusReflectedPulse", _fitStatusReflectedPulse, Form("fitStatusReflectedPulse[%i][%i]/O",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEsReflectedPulse", _PEsReflectedPulse, Form("PEsReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEsTemperatureCorrectedReflectedPulse", _PEsTemperatureCorrectedReflectedPulse, Form("PEsTemperatureCorrectedReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("pulseHeightReflectedPulse", _pulseHeightReflectedPulse, Form("pulseHeightReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
@@ -489,15 +504,15 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
         gPad->cd(_plot[index]);
       }
 
-      float pedestal = calib.GetPedestal(i,j);
-      float calibrationFactor = calib.GetCalibrationFactor(i,j);
-      float calibrationFactorTemperatureCorrected = calib.GetCalibrationFactorTemperatureCorrected(i,j);
+      float pedestal = calib.GetPedestals().at(index);
+      float calibrationFactor = calib.GetCalibrationFactors().at(index);
+      float calibrationFactorTemperatureCorrected = calib.GetCalibrationFactorsTemperatureCorrected().at(index);
 
       if(!isnan(_timeSinceSpill[index]))  //missing FEB/channel in raw data
         reco.PeakFitter(&(_adc[index*_numberOfSamples]), _numberOfSamples, pedestal, calibrationFactor, draw);
 
       //main pulse
-      _valid[index]                   = reco._valid[0];
+      _fitStatus[index]               = reco._fitStatus[0];
       _PEs[index]                     = reco._PEs[0];
       _PEsTemperatureCorrected[index] = -1;
 
@@ -520,10 +535,10 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
       _recoEndBin[index]              = reco._recoEndBin[0]+_signalRegionStart;
       _pedestal[index]                = pedestal;
 
-      if(draw && reco._valid[0]) _plot[index]--;
+      if(draw && reco._fitStatus[0]==1) _plot[index]--;
 
       //reflected pulse
-      _validReflectedPulse[index]                   = reco._valid[1];
+      _fitStatusReflectedPulse[index]               = reco._fitStatus[1];
       _PEsReflectedPulse[index]                     = reco._PEs[1];
       _PEsTemperatureCorrectedReflectedPulse[index] = -1;
       if(_temperature[index]!=0) _PEsTemperatureCorrectedReflectedPulse[index] = reco._PEs[1]*temperatureCorrection;
@@ -535,7 +550,7 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
       _recoEndBinReflectedPulse[index]              = reco._recoEndBin[1]+_signalRegionStart;
 
       //fill histograms
-      if(reco._beta[0]>0)
+      if(reco._fitStatus[0]==1)
       {
         _histPEs[index]->Fill(reco._PEs[0]);
         _histPEsTemperatureCorrected[index]->Fill(_PEsTemperatureCorrected[index]);
@@ -656,29 +671,54 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &area)
     area = fit.GetParameter(2);
 }
 
-void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs)
+void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
+                    float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples)
 {
   if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
 
   int   nEventsExpected;
   int   nEventsActual;
   bool  spillStored;
+  struct tm  timestamp;
   int  *boardStatus = new int[numberOfFebs*BOARD_STATUS_REGISTERS];
   treeSpills->SetBranchAddress("spill_nevents", &nEventsExpected);
   treeSpills->SetBranchAddress("spill_neventsActual", &nEventsActual);
   treeSpills->SetBranchAddress("spill_stored", &spillStored);
   treeSpills->SetBranchAddress("spill_boardStatus", boardStatus);
+  treeSpills->SetBranchAddress("spill_timestamp_sec", &timestamp.tm_sec);
+  treeSpills->SetBranchAddress("spill_timestamp_min", &timestamp.tm_min);
+  treeSpills->SetBranchAddress("spill_timestamp_hour", &timestamp.tm_hour);
+  treeSpills->SetBranchAddress("spill_timestamp_mday", &timestamp.tm_mday);
+  treeSpills->SetBranchAddress("spill_timestamp_mon", &timestamp.tm_mon);
+  treeSpills->SetBranchAddress("spill_timestamp_year", &timestamp.tm_year);
+  treeSpills->SetBranchAddress("spill_timestamp_wday", &timestamp.tm_wday);
+  treeSpills->SetBranchAddress("spill_timestamp_yday", &timestamp.tm_yday);
+  treeSpills->SetBranchAddress("spill_timestamp_isdst", &timestamp.tm_isdst);
+
+  treeSpills->GetEntry(0);
+  if(timestamp.tm_year==0) txtFile<<"no timestamp"<<std::endl;
+  else txtFile<<"timestamp: "<<asctime(&timestamp)<<std::endl;
+
   int nEventsExpectedTotal=0;   //of the spills that were stored
   int nEventsActualTotal=0;
   int nSpillsExpected=treeSpills->GetEntries();
-  int nSpillsActual=0;
+  nSpillsActual=0;
 
   bool  foundFeb[numberOfFebs]={false};
-  int   febID[numberOfFebs]={0};
-  int   pipeline[numberOfFebs]={0};
-  int   samples[numberOfFebs]={0};
-  int   nFebSpillsActual[numberOfFebs]={0};
-  float febTemperature[numberOfFebs]={0};
+  for(int feb=0; feb<numberOfFebs; ++feb)
+  {
+    febID[feb]=0; 
+    febTemperaturesAvg[feb]=0;
+    pipeline[feb]=0;
+    samples[feb]=0;
+    nFebSpillsActual[feb]=0;
+  }
+  for(int i=0; i<numberOfFebs*8; ++i)
+  {
+    supplyMonitorsAvg[i]=0;
+    biasVoltagesAvg[i]=0;
+  }
+  float febTemperatures[numberOfFebs]={0};
   float supplyMonitors[numberOfFebs][8]={0};
   float biasVoltages[numberOfFebs][8]={0};
   for(int iSpill=0; iSpill<nSpillsExpected; ++iSpill)
@@ -705,7 +745,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
       }
 
       ++nFebSpillsActual[feb];
-      febTemperature[feb]+=boardStatus[feb*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
+      febTemperatures[feb]+=boardStatus[feb*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
       supplyMonitors[feb][0]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+0]*0.001;
       supplyMonitors[feb][1]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+1]*0.001;
       supplyMonitors[feb][2]+=boardStatus[feb*BOARD_STATUS_REGISTERS+3+2]*0.002;
@@ -731,8 +771,9 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   {
     if(nFebSpillsActual[feb]>0)
     {
-      txtFile<<feb<<"    "<<febID[feb]<<"   "<<nFebSpillsActual[feb]<<"     "<<febTemperature[feb]/nFebSpillsActual[feb]<<"    ";
-      for(int i=0; i<8; ++i) txtFile<<supplyMonitors[feb][i]/nFebSpillsActual[feb]<<"    ";
+      febTemperaturesAvg[feb]=febTemperatures[feb]/nFebSpillsActual[feb];
+      txtFile<<feb<<"    "<<febID[feb]<<"   "<<nFebSpillsActual[feb]<<"     "<<febTemperaturesAvg[feb]<<"    ";
+      for(int i=0; i<8; ++i) {supplyMonitorsAvg[feb*8+i]=supplyMonitors[feb][i]/nFebSpillsActual[feb]; txtFile<<supplyMonitorsAvg[feb*8+i]<<"    ";}
       txtFile<<std::endl;
     }
     else
@@ -747,7 +788,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
     if(nFebSpillsActual[feb]>0)
     {
       txtFile<<feb<<"    ";
-      for(int i=0; i<8; ++i) txtFile<<biasVoltages[feb][i]/nFebSpillsActual[feb]<<"  ";
+      for(int i=0; i<8; ++i) {biasVoltagesAvg[feb*8+i]=biasVoltages[feb][i]/nFebSpillsActual[feb]; txtFile<<biasVoltagesAvg[feb*8+i]<<"  ";}
       txtFile<<pipeline[feb]<<"         "<<samples[feb]<<"  ";
       txtFile<<std::endl;
     }
@@ -762,7 +803,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 
 void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
                    const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> areas[2],
-                   const std::vector<float> &meanTemperatures, TTree *treeSpills, const int nEvents)
+                   const std::vector<float> &meanTemperatures, TTree *treeSpills, const int nEvents, const Calibration &calib)
 {
   std::ifstream settingsFile;
   settingsFile.open("config.txt");
@@ -778,20 +819,58 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   }
   settingsFile.close();
 
+  int   *febID = new int[numberOfFebs];
+  int    nSpillsActual;
+  int   *nFebSpillsActual = new int[numberOfFebs];
+  float *febTemperaturesAvg = new float[numberOfFebs];
+  float *supplyMonitorsAvg = new float[numberOfFebs*8];
+  float *biasVoltagesAvg = new float[numberOfFebs*8];
+  int   *pipeline = new int[numberOfFebs];
+  int   *samples = new int[numberOfFebs];
+  float *mpvsSummary = const_cast<float*>(mpvs[0].data());
+  float *mpvsTSummary = const_cast<float*>(mpvs[1].data());
+  float *fwhmsSummary = const_cast<float*>(fwhms[0].data());
+  float *fwhmsTSummary = const_cast<float*>(fwhms[1].data());
+  float *areasSummary = const_cast<float*>(areas[0].data());
+  float *areasTSummary = const_cast<float*>(areas[1].data());
+  float *meanTemperaturesSummary = const_cast<float*>(meanTemperatures.data());
+  float *pedestals = const_cast<float*>(calib.GetPedestals().data());
+  float *calibConstants = const_cast<float*>(calib.GetCalibrationFactors().data());
+  float *calibConstantsT = const_cast<float*>(calib.GetCalibrationFactorsTemperatureCorrected().data());
+  TTree *recoTreeSummary = new TTree("runSummary","runSummary");
+  recoTreeSummary->Branch("febID", febID, Form("febID[%i]/I",numberOfFebs));
+  recoTreeSummary->Branch("spillsRecorded", &nSpillsActual, "spillsRecorded/I");
+  recoTreeSummary->Branch("febSpills", nFebSpillsActual, Form("febSpills[%i]/I",numberOfFebs));
+  recoTreeSummary->Branch("febTemperaturesAvg", febTemperaturesAvg, Form("febTemperaturesAvg[%i]/F",numberOfFebs));
+  recoTreeSummary->Branch("supplyMonitorsAvg", supplyMonitorsAvg, Form("supplyMonitorsAvg[%i][%i]/F",numberOfFebs,8));
+  recoTreeSummary->Branch("biasVoltagesAvg", biasVoltagesAvg, Form("biasVoltagesAvg[%i][%i]/F",numberOfFebs,8));
+  recoTreeSummary->Branch("pipeline", pipeline, Form("pipeline[%i]/I",numberOfFebs));
+  recoTreeSummary->Branch("samples", samples, Form("samples[%i]/I",numberOfFebs));
+  recoTreeSummary->Branch("PEs", mpvsSummary, Form("PEs[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("PEsTemperatureCorrected", mpvsTSummary, Form("PEsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("FWHMs", fwhmsSummary, Form("FWHMs[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("FWHMsTemperatureCorrected", fwhmsTSummary, Form("FWHMsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("signals", areasSummary, Form("signals[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("signalsTemperatureCorrected", areasTSummary, Form("signalsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("meanTemperatures", meanTemperaturesSummary, Form("meanTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("pedestals", pedestals, Form("pedestals[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("calibConstants", calibConstants, Form("calibConstants[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("calibConstantsTemperatureCorrected", calibConstantsT, Form("calibConstantsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+
   std::ofstream txtFile;
   txtFile.open(txtFileName.c_str());
   
-  BoardRegisters(treeSpills, txtFile, numberOfFebs);
+  BoardRegisters(treeSpills, txtFile, numberOfFebs, febID, nSpillsActual, nFebSpillsActual, febTemperaturesAvg, supplyMonitorsAvg, biasVoltagesAvg, pipeline, samples);
 
   txtFile<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
   txtFile<<"calibTemperatureIntercept: "<<calibTemperatureIntercept<<" deg C  ";
   txtFile<<"PETemperatureIntercept: "<<PETemperatureIntercept<<" deg C"<<std::endl;
-  txtFile<<"  FEB  Channel     PE     PE Temp Corr    FWHM                   Signals                meanTemp"<<std::endl;
+  txtFile<<"  FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr"<<std::endl;
 
   std::cout<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
   std::cout<<"calibTemperatureIntercept: "<<calibTemperatureIntercept<<" deg C  ";
   std::cout<<"PETemperatureIntercept: "<<PETemperatureIntercept<<" deg C"<<std::endl;
-  std::cout<<"         FEB  Channel     PE     PE Temp Corr    FWHM                   Signals               meanTemp"<<std::endl;
+  std::cout<<"         FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr"<<std::endl;
 
   for(int i=0; i<numberOfFebs; i++)
   {
@@ -810,7 +889,10 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
       txtFile<<std::setw(8)<<areas[0][index]<<"  ";
       txtFile<<std::setw(8)<<areas[1][index]<<"     ";
       txtFile<<std::setprecision(1);
-      txtFile<<std::setw(8)<<meanTemperatures[index]<<std::endl;
+      txtFile<<std::setw(8)<<meanTemperatures[index]<<"     ";
+      txtFile<<std::setw(8)<<calib.GetPedestals()[index]<<"  ";
+      txtFile<<std::setw(8)<<calib.GetCalibrationFactors()[index]<<"  ";
+      txtFile<<std::setw(8)<<calib.GetCalibrationFactorsTemperatureCorrected()[index]<<std::endl;
 
       std::cout<<std::fixed;
       std::cout<<std::setprecision(1);
@@ -823,10 +905,15 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
       std::cout<<std::setw(8)<<areas[0][index]<<"  ";
       std::cout<<std::setw(8)<<areas[1][index]<<"     ";
       std::cout<<std::setprecision(1);
-      std::cout<<std::setw(8)<<meanTemperatures[index]<<std::endl;
+      std::cout<<std::setw(8)<<meanTemperatures[index]<<"     ";
+      std::cout<<std::setw(8)<<calib.GetPedestals()[index]<<"  ";
+      std::cout<<std::setw(8)<<calib.GetCalibrationFactors()[index]<<"  ";
+      std::cout<<std::setw(8)<<calib.GetCalibrationFactorsTemperatureCorrected()[index]<<std::endl;
     }
   }
   txtFile.close();
+  recoTreeSummary->Fill();
+  recoTreeSummary->Write("", TObject::kOverwrite);
 }
 
 std::string CreateSequenceString(const std::vector<int> channels)
@@ -1130,7 +1217,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
     }
   }
 
-  StorePEyields(txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, areas, meanTemperatures, treeSpills, nEvents);
+  StorePEyields(txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, areas, meanTemperatures, treeSpills, nEvents, calib);
 
   Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms);
 
