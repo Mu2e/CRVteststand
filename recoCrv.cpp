@@ -696,8 +696,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   treeSpills->SetBranchAddress("spill_timestamp_isdst", &timestamp.tm_isdst);
 
   treeSpills->GetEntry(0);
-  if(timestamp.tm_year==0) txtFile<<"no timestamp"<<std::endl;
-  else txtFile<<"timestamp: "<<asctime(&timestamp)<<std::endl;
+  txtFile<<"timestamp: "<<asctime(&timestamp);
 
   int nEventsExpectedTotal=0;   //of the spills that were stored
   int nEventsActualTotal=0;
