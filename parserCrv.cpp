@@ -18,7 +18,6 @@ const int BOARD_STATUS_REGISTERS=22;
 struct Event
 {
   bool                                            _badEvent;
-//  std::map<int,int>                               _tdcSinceSpill;  //the map key is the FEB //OLD
   std::map<std::pair<int,int> ,long>              _tdcSinceSpill;  //TDC for every FEB/channel pair
   std::map<std::pair<int,int>, std::vector<int> > _adc;            //ADC samples for every FEB/channel pair
   std::map<std::pair<int,int>, float>             _temperature;    //CMB temperature
@@ -67,7 +66,6 @@ class EventTree
   //time stamp stored only for the first spill of the first subrun
   struct tm  _timestamp;
 
-//  int    *_tdcSinceSpill;  //OLD
   long   *_tdcSinceSpill;
   double *_timeSinceSpill;
   int    *_adc;
@@ -79,7 +77,6 @@ class EventTree
   bool ReadSpillHeader();
   bool ReadEventHeaderStart();
   bool ReadEventHeader(int &eventNumber, long &tdcSinceSpill, size_t &dataSize, bool missingBytes);
-  //bool ReadEvent(Event &theEvent, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes);  //OLD
   bool ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes);
   bool ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD_STATUS_REGISTERS]);
 };
@@ -123,8 +120,6 @@ EventTree::EventTree(const std::string &runNumber, const std::string &inFileName
 
 
   _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
-//  _tdcSinceSpill  = new int[_numberOfFebs];   //OLD
-//  _timeSinceSpill = new double[_numberOfFebs];  //OLD
   _tdcSinceSpill  = new long[_numberOfFebs*_channelsPerFeb];
   _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
   _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
@@ -166,8 +161,6 @@ void EventTree::PrepareTree()
 {
   _tree->Branch("runtree_spill_num", &_spillNumber, "runtree_spill_num/I");
   _tree->Branch("runtree_event_num", &_eventNumber, "runtree_event_num/I");
-//  _tree->Branch("runtree_tdc_since_spill", _tdcSinceSpill, Form("runtree_tdc_since_spill[%i]/I",_numberOfFebs)); //OLD
-//  _tree->Branch("runtree_time_since_spill", _timeSinceSpill, Form("runtree_time_since_spill[%i]/D",_numberOfFebs)); //OLD
   _tree->Branch("runtree_tdc_since_spill", _tdcSinceSpill, Form("runtree_tdc_since_spill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_time_since_spill", _timeSinceSpill, Form("runtree_time_since_spill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_adc", _adc, Form("runtree_adc[%i][%i][%i]/I",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
@@ -277,8 +270,8 @@ bool EventTree::ReadEventHeader(int &eventNumber, long &tdcSinceSpill, size_t &d
   return true;
 }
 
-//bool EventTree::ReadEvent(Event &theEvent, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes) //OLD
-bool EventTree::ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes)
+bool EventTree::ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, 
+                          int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes)
 {
   //get the data block for this event and channel
   std::vector<unsigned> buffer(dataSize*2);
@@ -485,13 +478,11 @@ void EventTree::ReadSpill()
 
       missingBytes=false;
       Event &theEvent = _spill[eventNumber]; 
-//      theEvent._tdcSinceSpill[feb]=tdcSinceSpill;  //OLD This is now done in ReadEvent
 
       for(int channelInFpga=0; channelInFpga<CHANNEL_PER_FPGA; channelInFpga++)
       {
 //std::cout<<"EVENT  "<<feb<<"  "<<eventNumber<<"  "<<channelInFpga<<"  "<<dataSize<<"  "<<tdcSinceSpill<<"         "<<_spill.size()<<std::endl;
         bool checkMissingBytes=(channelInFpga==CHANNEL_PER_FPGA-1);
-//        if(!ReadEvent(theEvent, feb, dataSize, checkMissingBytes, missingBytes))  //OLD
         if(!ReadEvent(theEvent, tdcSinceSpill, CMBtemperatures, feb, dataSize, checkMissingBytes, missingBytes))
         {
           std::cout<<"Event "<<eventNumber<<" at FEB "<<feb<<" cannot be read. ";
