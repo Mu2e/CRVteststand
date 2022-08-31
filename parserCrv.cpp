@@ -5,6 +5,7 @@
 # include <string>
 # include <vector>
 # include <map>
+# include <set>
 # include <experimental/filesystem>
 
 # include "TTree.h"
@@ -17,7 +18,6 @@ const int BOARD_STATUS_REGISTERS=22;
 struct Event
 {
   bool                                            _badEvent;
-//  std::map<int,int>                               _tdcSinceSpill;  //the map key is the FEB //OLD
   std::map<std::pair<int,int> ,long>              _tdcSinceSpill;  //TDC for every FEB/channel pair
   std::map<std::pair<int,int>, std::vector<int> > _adc;            //ADC samples for every FEB/channel pair
   std::map<std::pair<int,int>, float>             _temperature;    //CMB temperature
@@ -29,7 +29,7 @@ class EventTree
 {
   public:
   EventTree(const std::string &runNumber, const std::string &inFileName, const std::string &outFileName,
-            const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples);
+            const int channelsPerFeb, const int numberOfSamples);
   ~EventTree();
   void Finish();
   void Clear();
@@ -52,6 +52,7 @@ class EventTree
   bool   _missingFebs;           //missing FEBs or incomplete stabs (while stab marker was present)
   bool   _spillStored;           //spill was stored in the event tree
   size_t _nEventsActual;         //number of events that were stored in the event tree
+  bool   _oldFileVersion;        //older files start with FEB 1
 
   //tree event data
   int    _numberOfFebs;
@@ -65,7 +66,6 @@ class EventTree
   //time stamp stored only for the first spill of the first subrun
   struct tm  _timestamp;
 
-//  int    *_tdcSinceSpill;  //OLD
   long   *_tdcSinceSpill;
   double *_timeSinceSpill;
   int    *_adc;
@@ -77,24 +77,15 @@ class EventTree
   bool ReadSpillHeader();
   bool ReadEventHeaderStart();
   bool ReadEventHeader(int &eventNumber, long &tdcSinceSpill, size_t &dataSize, bool missingBytes);
-  //bool ReadEvent(Event &theEvent, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes);  //OLD
   bool ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes);
   bool ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD_STATUS_REGISTERS]);
 };
 
 EventTree::EventTree(const std::string &runNumber, const std::string &inFileName, const std::string &outFileName,
-                     const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples) : 
+                     const int channelsPerFeb, const int numberOfSamples) : 
                      _runNumber(runNumber), _inFileName(inFileName), _outFileName(outFileName), _binary(false), 
-                     _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples)
+                     _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples)
 {
-  _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
-//  _tdcSinceSpill  = new int[_numberOfFebs];   //OLD
-//  _timeSinceSpill = new double[_numberOfFebs];  //OLD
-  _tdcSinceSpill  = new long[_numberOfFebs*_channelsPerFeb];
-  _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
-  _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
-  _temperature    = new float[_numberOfFebs*_channelsPerFeb];
-
   _file = new TFile(_outFileName.c_str(), "recreate");
   _tree = new TTree("run","run");
   _treeSpills = new TTree("spills","spills");
@@ -105,6 +96,34 @@ EventTree::EventTree(const std::string &runNumber, const std::string &inFileName
     std::cout<<"Couldn't open input file "<<_inFileName<<"."<<std::endl;
     exit(0);
   }
+
+  //find number of FEBs in file
+  std::cout<<"Determining the number of FEBs."<<std::endl;
+  std::string line;
+  std::string searchString="--** SOURCE = FEB";
+  std::set<int> febs;
+  while(getline(_inFile, line))
+  {
+    size_t searchStringPos=line.find(searchString);
+    if(searchStringPos==std::string::npos) continue;
+    int feb = std::stoi(line.substr(searchStringPos+searchString.size()));
+    febs.insert(feb);
+  }
+  _inFile.clear();
+  _inFile.seekg(0,std::ios_base::beg);
+
+  //FEB numbers start at 0 in new files and start at 1 in older files
+  _oldFileVersion=false;
+  if(*febs.begin()==1) _oldFileVersion=true;
+  _numberOfFebs=febs.size();
+  std::cout<<"Found "<<_numberOfFebs<<" FEBs"<<std::endl;
+
+
+  _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
+  _tdcSinceSpill  = new long[_numberOfFebs*_channelsPerFeb];
+  _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
+  _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
+  _temperature    = new float[_numberOfFebs*_channelsPerFeb];
 
   Clear();
   PrepareTree();
@@ -142,8 +161,6 @@ void EventTree::PrepareTree()
 {
   _tree->Branch("runtree_spill_num", &_spillNumber, "runtree_spill_num/I");
   _tree->Branch("runtree_event_num", &_eventNumber, "runtree_event_num/I");
-//  _tree->Branch("runtree_tdc_since_spill", _tdcSinceSpill, Form("runtree_tdc_since_spill[%i]/I",_numberOfFebs)); //OLD
-//  _tree->Branch("runtree_time_since_spill", _timeSinceSpill, Form("runtree_time_since_spill[%i]/D",_numberOfFebs)); //OLD
   _tree->Branch("runtree_tdc_since_spill", _tdcSinceSpill, Form("runtree_tdc_since_spill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_time_since_spill", _timeSinceSpill, Form("runtree_time_since_spill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_adc", _adc, Form("runtree_adc[%i][%i][%i]/I",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
@@ -253,8 +270,8 @@ bool EventTree::ReadEventHeader(int &eventNumber, long &tdcSinceSpill, size_t &d
   return true;
 }
 
-//bool EventTree::ReadEvent(Event &theEvent, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes) //OLD
-bool EventTree::ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes)
+bool EventTree::ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, 
+                          int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes)
 {
   //get the data block for this event and channel
   std::vector<unsigned> buffer(dataSize*2);
@@ -336,8 +353,7 @@ bool EventTree::ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD
   if(!getline(_inFile, line)) return false;  //seems to be needed to get to the end of the line
 
   //FPGA blocks
-//  int nFPGA = _channelsPerFeb/16;  //FIXME: make sure that nChannels are always multiples of 16 or switch to nFPGAs for user parameter
-  int nFPGA = 4;   //FIXME: the DAQ program always writes the data of all 4 FPGAs
+  int nFPGA = 4;   //the stab command always returns the data of all 4 FPGAs, even if some FPGAs are turned off
   for(int iFPGA=0; iFPGA<nFPGA; ++iFPGA)
   {
     if(!getline(_inFile, line)) return false;  //not used
@@ -363,7 +379,7 @@ void EventTree::ReadSpill()
   _spill.clear();
   _timestamp = {0,0,0,0,0,0,0,0,0};
 
-std::cout<<"start new spill"<<std::endl;
+  std::cout<<"start new spill"<<std::endl;
   int feb=-1;
 
   while(1)
@@ -396,8 +412,7 @@ std::cout<<"start new spill"<<std::endl;
 
     //Check whether there is stab data in the file
     std::vector<float> CMBtemperatures;
-//    CMBtemperatures.resize(_channelsPerFeb);
-    CMBtemperatures.resize(64);  //FIXME: stabs always contain the temperatures of all 4 FPGAs (i.e. all 64 channels)
+    CMBtemperatures.resize(64);  //stabs always contain the temperatures of all 4 FPGAs (i.e. all 64 channels)
     int boardStatusTmp[BOARD_STATUS_REGISTERS];
     if(line.find("stab")<2)
     {
@@ -416,6 +431,7 @@ std::cout<<"start new spill"<<std::endl;
     if(searchStringPos==std::string::npos) continue;
 
     int newfeb = std::stoi(line.substr(searchStringPos+searchString.size()));
+    if(_oldFileVersion) --newfeb;
     if(newfeb<=feb)
     {
       //seems to have found a new spill (and not just a new FEB of the same spill). go back in the file to the beginning of this spill
@@ -440,6 +456,7 @@ std::cout<<"start new spill"<<std::endl;
     {
       //couldn't read the spill header.
       std::cout<<"Couldn't read spill header. Moving to the next FEB."<<std::endl;
+      _missingFebs=true;
       continue;
     }
 
@@ -461,13 +478,11 @@ std::cout<<"start new spill"<<std::endl;
 
       missingBytes=false;
       Event &theEvent = _spill[eventNumber]; 
-//      theEvent._tdcSinceSpill[feb]=tdcSinceSpill;  //OLD This is now done in ReadEvent
 
       for(int channelInFpga=0; channelInFpga<CHANNEL_PER_FPGA; channelInFpga++)
       {
 //std::cout<<"EVENT  "<<feb<<"  "<<eventNumber<<"  "<<channelInFpga<<"  "<<dataSize<<"  "<<tdcSinceSpill<<"         "<<_spill.size()<<std::endl;
         bool checkMissingBytes=(channelInFpga==CHANNEL_PER_FPGA-1);
-//        if(!ReadEvent(theEvent, feb, dataSize, checkMissingBytes, missingBytes))  //OLD
         if(!ReadEvent(theEvent, tdcSinceSpill, CMBtemperatures, feb, dataSize, checkMissingBytes, missingBytes))
         {
           std::cout<<"Event "<<eventNumber<<" at FEB "<<feb<<" cannot be read. ";
@@ -524,7 +539,34 @@ void EventTree::FillSpill()
     std::cout<<"Expected "<<_nEvents<<" events in spill "<<_spillNumber<<". Found "<<_spill.size()<<" events."<<std::endl;
   }
 
-  std::map<int,Event>::const_iterator event;
+  //check whether all channels are present
+  size_t eventsWithMissingChannels=0;
+  std::map<int,Event>::iterator event;
+  for(event=_spill.begin(); event!=_spill.end(); event++)
+  {
+    Event &theEvent = event->second;
+    for(int feb=0; feb<_numberOfFebs; feb++)
+    {
+      for(int channel=0; channel<_channelsPerFeb; channel++)
+      {
+        if(theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel))==theEvent._tdcSinceSpill.end()) {theEvent._badEvent=true; ++eventsWithMissingChannels; break;}
+      }
+      if(theEvent._badEvent==true) break;
+    }
+  }
+  if(eventsWithMissingChannels>0)
+  {
+    if(eventsWithMissingChannels>=_spill.size())
+    {
+      std::cout<<"All events of spill "<<_spillNumber<<" have missing channels."<<std::endl;
+      std::cout<<"Events of this spill are not stored, but spill information gets added to spill tree."<<std::endl;
+      _spillStored=false;
+      _treeSpills->Fill();
+      return;
+    }
+    std::cout<<eventsWithMissingChannels<<" events have missing channels. These events are not stored."<<std::endl;
+  }
+
   for(event=_spill.begin(); event!=_spill.end(); event++)
   {
     _eventNumber = event->first;
@@ -534,18 +576,6 @@ void EventTree::FillSpill()
 
     for(int feb=0; feb<_numberOfFebs; feb++)
     {
-/*  //OLD
-      if(theEvent._tdcSinceSpill.find(feb)==theEvent._tdcSinceSpill.end())
-      {
-//        std::cout<<"Missing FEB "<<feb<<" at event number "<<_eventNumber<<". "<<std::endl;
-        _timeSinceSpill[feb]=NAN;  //will be used as identifier for missing FEBs in an event
-        continue;
-      }
-
-      _tdcSinceSpill[feb] = theEvent._tdcSinceSpill.at(feb);
-      _timeSinceSpill[feb] = _tdcSinceSpill[feb] / CRV_TDC_RATE;
-*/
-
       for(int channel=0; channel<_channelsPerFeb; channel++)
       {
         int indexTDC=feb*_channelsPerFeb+channel;
@@ -557,7 +587,8 @@ void EventTree::FillSpill()
         }
         else
         {
-//          std::cout<<"Missing FEB "<<feb<<" at event number "<<_eventNumber<<". "<<std::endl;
+          //this should actually not happen, because spills with missing channels are filtered out above
+          std::cout<<"Channel "<<channel<<" at "<<feb<<" is missing for event number "<<_eventNumber<<". "<<std::endl;
           //NAN will be used as identifier for missing FEBs/channels
           _timeSinceSpill[indexTDC]=NAN; //_timeSinceSpill[feb][channel];
           continue;   //no need to fill ADCs below; they are set to zero in the constructor
@@ -672,17 +703,16 @@ int main(int argc, char **argv)
   std::string outFileName;
   makeFileNames(runNumber, inFileName, outFileName);
 
-  int nFebs=4;
   int nChannels=64;
   int nSamples=127;
   for(int i=2; i<argc-1; i++)
   {
-    if(strcmp(argv[i],"-f")==0) nFebs=atoi(argv[i+1]);
+    if(strcmp(argv[i],"-f")==0) std::cout<<"The -f argument is not needed anymore. The parser finds the number of FEBs"<<std::endl;
     if(strcmp(argv[i],"-c")==0) nChannels=atoi(argv[i+1]);
     if(strcmp(argv[i],"-s")==0) nSamples=atoi(argv[i+1]);
   }
 
-  EventTree eventTree(runNumber, inFileName, outFileName, nFebs, nChannels, nSamples);
+  EventTree eventTree(runNumber, inFileName, outFileName, nChannels, nSamples);
 
   while(1)
   {

@@ -401,7 +401,7 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
       //fill temperature plot
       if(_temperature[index]!=0 && _lastSpillNumber[index]!=_spillNumber)
       {
-        _temperatureHist[index]->SetPoint(_temperatureHist[index]->GetN(),_spillNumber,_temperature[index]);
+        _temperatureHist[index]->SetPoint(_temperatureHist[index]->GetN(),_temperatureHist[index]->GetN(),_temperature[index]);
         _lastSpillNumber[index]=_spillNumber;
       }
 

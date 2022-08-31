@@ -134,7 +134,7 @@ void CrvRecoEvent::Init()
 {
   for(int i=0; i<2; ++i)
   {
-    _fitStatus[i]=0; _PEs[i]=-1; _pulseHeight[i]=NAN; _beta[i]=NAN; _time[i]=NAN; _LEtime[i]=NAN; _recoStartBin[i]=-1; _recoEndBin[i]=-1;
+    _fitStatus[i]=0; _PEs[i]=0; _pulseHeight[i]=NAN; _beta[i]=NAN; _time[i]=NAN; _LEtime[i]=NAN; _recoStartBin[i]=-1; _recoEndBin[i]=-1;
   }
 }
 bool CrvRecoEvent::FailedFit(TFitResultPtr fr)
@@ -424,7 +424,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("eventNumber", &_eventNumber, "eventNumber/I");
   recoTree->Branch("tdcSinceSpill", _tdcSinceSpill, Form("tdcSinceSpill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("timeSinceSpill", _timeSinceSpill, Form("timeSinceSpill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
-  recoTree->Branch("fitStatus", _fitStatus, Form("fitStatus[%i][%i]/O",_numberOfFebs,_channelsPerFeb));
+  recoTree->Branch("fitStatus", _fitStatus, Form("fitStatus[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEs", _PEs, Form("PEs[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEsTemperatureCorrected", _PEsTemperatureCorrected, Form("PEsTemperatureCorrected[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("temperature", _temperature, Form("temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
@@ -436,7 +436,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("recoStartBin", _recoStartBin, Form("recoStartBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoEndBin", _recoEndBin, Form("recoEndBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("pedestal", _pedestal, Form("pedestal[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
-  recoTree->Branch("fitStatusReflectedPulse", _fitStatusReflectedPulse, Form("fitStatusReflectedPulse[%i][%i]/O",_numberOfFebs,_channelsPerFeb));
+  recoTree->Branch("fitStatusReflectedPulse", _fitStatusReflectedPulse, Form("fitStatusReflectedPulse[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEsReflectedPulse", _PEsReflectedPulse, Form("PEsReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("PEsTemperatureCorrectedReflectedPulse", _PEsTemperatureCorrectedReflectedPulse, Form("PEsTemperatureCorrectedReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("pulseHeightReflectedPulse", _pulseHeightReflectedPulse, Form("pulseHeightReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
@@ -557,7 +557,7 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
       }
       if(_temperature[index]!=0 && _lastSpillNumber[index]!=_spillNumber)
       {
-        _histTemperatures[index]->SetPoint(_histTemperatures[index]->GetN(),_spillNumber,_temperature[index]);
+        _histTemperatures[index]->SetPoint(_histTemperatures[index]->GetN(),_histTemperatures[index]->GetN(),_temperature[index]);
         _lastSpillNumber[index]=_spillNumber;
       }
     }
