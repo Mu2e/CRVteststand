@@ -720,7 +720,6 @@ int main(int argc, char **argv)
     eventTree.ReadSpill();
     eventTree.FillSpill();
     if(eventTree.AtEOF()) break;
-//    if(eventTree.GetSpillNumber()>4000) break;
   }
   eventTree.Finish();
 
