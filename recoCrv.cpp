@@ -294,7 +294,7 @@ class CrvEvent
 {
   public:
   CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, 
-           const int minSpillNumber, const int maxSpillNumber, TTree *tree, TTree *recoTree);
+           TTree *tree, TTree *recoTree);
   void     Reconstruct(int entry, const Calibration &calib);
   TCanvas *GetCanvas(int feb, int channel) {return _canvas[feb*_channelsPerFeb+channel];}
   TH1F    *GetHistPEs(int i, int feb, int channel) 
@@ -319,8 +319,6 @@ class CrvEvent
   int _numberOfFebs;
   int _channelsPerFeb;
   int _numberOfSamples;
-  int _minSpillNumber;
-  int _maxSpillNumber;
   
   TTree *_tree;
   TTree *_recoTree;
@@ -361,9 +359,9 @@ class CrvEvent
   std::vector<TGraph*>  _histTemperatures;
 };
 CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples,
-                   const int minSpillNumber, const int maxSpillNumber, TTree *tree, TTree *recoTree) :
+                   TTree *tree, TTree *recoTree) :
                    _runNumber(runNumber), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), 
-                   _minSpillNumber(minSpillNumber), _maxSpillNumber(maxSpillNumber), _tree(tree), _recoTree(recoTree)
+                   _tree(tree), _recoTree(recoTree)
 {
   std::ifstream configFile;
   configFile.open("config.txt");
@@ -672,31 +670,32 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &area)
 }
 
 void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
-                    float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples)
+                    float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples, time_t &timestamp)
 {
   if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
 
   int   nEventsExpected;
   int   nEventsActual;
   bool  spillStored;
-  struct tm  timestamp;
+  struct tm  timestampStruct;
   int  *boardStatus = new int[numberOfFebs*BOARD_STATUS_REGISTERS];
   treeSpills->SetBranchAddress("spill_nevents", &nEventsExpected);
   treeSpills->SetBranchAddress("spill_neventsActual", &nEventsActual);
   treeSpills->SetBranchAddress("spill_stored", &spillStored);
   treeSpills->SetBranchAddress("spill_boardStatus", boardStatus);
-  treeSpills->SetBranchAddress("spill_timestamp_sec", &timestamp.tm_sec);
-  treeSpills->SetBranchAddress("spill_timestamp_min", &timestamp.tm_min);
-  treeSpills->SetBranchAddress("spill_timestamp_hour", &timestamp.tm_hour);
-  treeSpills->SetBranchAddress("spill_timestamp_mday", &timestamp.tm_mday);
-  treeSpills->SetBranchAddress("spill_timestamp_mon", &timestamp.tm_mon);
-  treeSpills->SetBranchAddress("spill_timestamp_year", &timestamp.tm_year);
-  treeSpills->SetBranchAddress("spill_timestamp_wday", &timestamp.tm_wday);
-  treeSpills->SetBranchAddress("spill_timestamp_yday", &timestamp.tm_yday);
-  treeSpills->SetBranchAddress("spill_timestamp_isdst", &timestamp.tm_isdst);
+  treeSpills->SetBranchAddress("spill_timestamp_sec", &timestampStruct.tm_sec);
+  treeSpills->SetBranchAddress("spill_timestamp_min", &timestampStruct.tm_min);
+  treeSpills->SetBranchAddress("spill_timestamp_hour", &timestampStruct.tm_hour);
+  treeSpills->SetBranchAddress("spill_timestamp_mday", &timestampStruct.tm_mday);
+  treeSpills->SetBranchAddress("spill_timestamp_mon", &timestampStruct.tm_mon);
+  treeSpills->SetBranchAddress("spill_timestamp_year", &timestampStruct.tm_year);
+  treeSpills->SetBranchAddress("spill_timestamp_wday", &timestampStruct.tm_wday);
+  treeSpills->SetBranchAddress("spill_timestamp_yday", &timestampStruct.tm_yday);
+  treeSpills->SetBranchAddress("spill_timestamp_isdst", &timestampStruct.tm_isdst);
 
   treeSpills->GetEntry(0);
-  txtFile<<"timestamp: "<<asctime(&timestamp);
+  txtFile<<"timestamp: "<<asctime(&timestampStruct);
+  timestamp=mktime(&timestampStruct);
 
   int nEventsExpectedTotal=0;   //of the spills that were stored
   int nEventsActualTotal=0;
@@ -818,6 +817,7 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   }
   settingsFile.close();
 
+  time_t timestamp;  //=long
   int   *febID = new int[numberOfFebs];
   int    nSpillsActual;
   int   *nFebSpillsActual = new int[numberOfFebs];
@@ -837,6 +837,7 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   float *calibConstants = const_cast<float*>(calib.GetCalibrationFactors().data());
   float *calibConstantsT = const_cast<float*>(calib.GetCalibrationFactorsTemperatureCorrected().data());
   TTree *recoTreeSummary = new TTree("runSummary","runSummary");
+  recoTreeSummary->Branch("timestamp", &timestamp, "timestamp/L");
   recoTreeSummary->Branch("febID", febID, Form("febID[%i]/I",numberOfFebs));
   recoTreeSummary->Branch("spillsRecorded", &nSpillsActual, "spillsRecorded/I");
   recoTreeSummary->Branch("febSpills", nFebSpillsActual, Form("febSpills[%i]/I",numberOfFebs));
@@ -858,8 +859,10 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
 
   std::ofstream txtFile;
   txtFile.open(txtFileName.c_str());
-  
-  BoardRegisters(treeSpills, txtFile, numberOfFebs, febID, nSpillsActual, nFebSpillsActual, febTemperaturesAvg, supplyMonitorsAvg, biasVoltagesAvg, pipeline, samples);
+ 
+  timestamp=0;
+  nSpillsActual=0; 
+  BoardRegisters(treeSpills, txtFile, numberOfFebs, febID, nSpillsActual, nFebSpillsActual, febTemperaturesAvg, supplyMonitorsAvg, biasVoltagesAvg, pipeline, samples, timestamp);
 
   txtFile<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
   txtFile<<"calibTemperatureIntercept: "<<calibTemperatureIntercept<<" deg C  ";
@@ -1140,13 +1143,10 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->SetBranchAddress("spill_number_of_febs", &numberOfFebs);
   treeSpills->SetBranchAddress("spill_channels_per_feb", &channelsPerFeb);
   treeSpills->SetBranchAddress("spill_number_of_samples", &numberOfSamples);
-  treeSpills->GetEntry(0);  //to read the channelsPerFeb and numberOfSamples
-
-  int minSpillNumber=treeSpills->GetMinimum("spill_num");
-  int maxSpillNumber=treeSpills->GetMaximum("spill_num");
+  treeSpills->GetEntry(0);  //to read the numberOfFebs, channelsPerFeb, and numberOfSamples
 
   Calibration calib(calibFileName, numberOfFebs, channelsPerFeb); 
-  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, minSpillNumber, maxSpillNumber, tree, recoTree);
+  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree);
 
   int nEvents = tree->GetEntries();
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
