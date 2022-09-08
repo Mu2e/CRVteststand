@@ -1,7 +1,7 @@
 # CRVteststand
 Code to manage data from the CRV test stand.  
 
-Build:  
+<h3>Build:</h3>  
 source /cvmfs/mu2e.opensciencegrid.org/setupmu2e-art.sh  
 muse setup  
 mkdir workDir  
@@ -10,14 +10,17 @@ git clone git@github.com:Mu2e/CRVteststand.git
 cd CRVteststand  
 make  
 
-Run:  
+<h3>Run:</h3>  
 Modify config.txt  
 ./parserCrv Run_number  
 Ex: ./parserCrv 001052_000  
 ./calibCrv Run_number  
 ./recoCrv Run_number  
 
-Run on OSG:<br>
+<h3>Event Display</h3>
+Example: root -l "DisplayEventsNew.C(\"/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/rec.mu2e.CRV_wideband_cosmics.crvaging-005-junk.001137.root\",\"channelMapTest5.txt\")"
+
+<h3>Run on OSG:</h3>
 Requires the following things
 <ul>
 <li>Text file with a list of raw files to be processed.</li>
@@ -28,6 +31,3 @@ Requires the following things
 </ul>
 Submit the jobs in this way:
 ./processSubmit.sh -r listOfRawFiles.txt -e directoryOfExecutablesAndConfig -o outputDirectory<br>
-<br>
-Event Display<br>
-Example: root -l "DisplayEventsNew.C(\"/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/rec.mu2e.CRV_wideband_cosmics.crvaging-005-junk.001137.root\",\"channelMapTest5.txt\")"
