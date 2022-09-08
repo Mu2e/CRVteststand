@@ -10,7 +10,8 @@ git clone git@github.com:Mu2e/CRVteststand.git<br>
 cd CRVteststand<br>
 make<br>
 
-<h3>Run locally (see below for OSG jobs)</h3>  
+<h3>Run locally (see below for OSG jobs)</h3>
+<i>Make sure your files are pre-staged, if they are on tape.</i><br>
 Modify config.txt<br>
 ./parserCrv Run_number<br>
 Example: ./parserCrv 001052_000<br>  
@@ -21,6 +22,7 @@ Example: ./parserCrv 001052_000<br>
 Example: root -l "DisplayEventsNew.C(\"/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/rec.mu2e.CRV_wideband_cosmics.crvaging-005-junk.001137.root\",\"channelMapTest5.txt\")"<br>
 
 <h3>Run on OSG</h3>
+<i>Make sure your files are pre-staged, if they are on tape.</i><br>
 Requires the following things<br>
 <ul>
 <li>Text file with a list of raw files to be processed.</li>
