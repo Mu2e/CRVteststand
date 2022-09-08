@@ -27,7 +27,7 @@ Requires the following things
 <li>The submit script (processSubmit.sh) and script that runs at the OSG (processDo.sh). Both files are at github.</li>
 </ul>
 Submit the jobs in this way:
-./processSubmit.sh -r listOfRawFiles.txt -e directoryOfExecutablesAndConfig -o outputDirectory
-
-Event Display
+./processSubmit.sh -r listOfRawFiles.txt -e directoryOfExecutablesAndConfig -o outputDirectory<br>
+<br>
+Event Display<br>
 Example: root -l "DisplayEventsNew.C(\"/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/rec.mu2e.CRV_wideband_cosmics.crvaging-005-junk.001137.root\",\"channelMapTest5.txt\")"
