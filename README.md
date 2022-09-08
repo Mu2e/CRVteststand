@@ -28,3 +28,6 @@ Requires the following things
 </ul>
 Submit the jobs in this way:
 ./processSubmit.sh -r listOfRawFiles.txt -e directoryOfExecutablesAndConfig -o outputDirectory
+
+Event Display
+Example: root -l "DisplayEventsNew.C(\"/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/rec.mu2e.CRV_wideband_cosmics.crvaging-005-junk.001137.root\",\"channelMapTest5.txt\")"
