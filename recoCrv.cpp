@@ -1110,7 +1110,7 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
   }
 
   std::ofstream txtFile;
-  txtFile.open(txtFileName.c_str());
+  txtFile.open(txtFileName.c_str(),std::ios_base::app);
   txtFile<<"Mean near side    "<<std::setw(8)<<meanNear[0]<<"  "<<std::setw(8)<<meanNear[1]<<std::endl;
   txtFile<<"Mean far side    "<<std::setw(8)<<meanFar[0]<<"  "<<std::setw(8)<<meanFar[1]<<std::endl;
   txtFile.close();
