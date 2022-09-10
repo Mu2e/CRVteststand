@@ -440,15 +440,10 @@ bool EventWindow::DoEvent()
   }
   if(_fitButton->IsOn() && sumPEs>0 && nPoints>0)
   {
-    float scale=nPoints/sumPEs;
-    sumX *=scale;
-    sumY *=scale;
-    sumXY*=scale;
-    sumYY*=scale;
-    if(nPoints*sumYY-sumY*sumY!=0)
+    if(sumPEs*sumYY-sumY*sumY!=0)
     {
-      float slope=(nPoints*sumXY-sumX*sumY)/(nPoints*sumYY-sumY*sumY);
-      float intercept=(sumX-slope*sumY)/nPoints;
+      float slope=(sumPEs*sumXY-sumX*sumY)/(sumPEs*sumYY-sumY*sumY);
+      float intercept=(sumX-slope*sumY)/sumPEs;
       float x1=intercept+slope*_minY;
       float x2=intercept+slope*_maxY;
       for(int side=0; side<2; ++side)
