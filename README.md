@@ -19,7 +19,7 @@ Example: ./parserCrv 001052_000<br>
 ./recoCrv Run_number<br>
 
 <h3>Event Display</h3>
-Example: root -l "DisplayEventsNew.C(\"/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/rec.mu2e.CRV_wideband_cosmics.crvaging-005-junk.001137.root\",\"channelMapTest5.txt\")"<br>
+Example: root -l "DisplayEventsNew.C(\"/pnfs/mu2e/scratch/outstage/ehrlich/wideband9/crvreco/rec.mu2e.CRV_wideband_cosmics.crvaging-005-junk.001137.root\",\"channelMapCrvAging005.txt\")"<br>
 
 <h3>Run on OSG</h3>
 <i>Make sure your files are pre-staged, if they are on tape.</i><br>
