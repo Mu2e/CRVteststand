@@ -617,7 +617,7 @@ double LandauGaussFunction(double *x, double *par)
 
     return (par[2] * step * sum * invsq2pi / par[3]);
 }
-void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &area)
+void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals)
 {
     float maxX=0;
     float maxValue=0;
@@ -666,7 +666,7 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &area)
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    area = fit.GetParameter(2);
+    signals = h.Integral(15,150);
 }
 
 void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
@@ -800,8 +800,8 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 }
 
 void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
-                   const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> areas[2],
-                   const std::vector<float> &meanTemperatures, TTree *treeSpills, const int nEvents, const Calibration &calib)
+                   const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2],
+                   const std::vector<float> &meanTemperatures, TTree *treeSpills, int nEventsActual, const Calibration &calib)
 {
   std::ifstream settingsFile;
   settingsFile.open("config.txt");
@@ -830,8 +830,8 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   float *mpvsTSummary = const_cast<float*>(mpvs[1].data());
   float *fwhmsSummary = const_cast<float*>(fwhms[0].data());
   float *fwhmsTSummary = const_cast<float*>(fwhms[1].data());
-  float *areasSummary = const_cast<float*>(areas[0].data());
-  float *areasTSummary = const_cast<float*>(areas[1].data());
+  float *signalsSummary = const_cast<float*>(signals[0].data());
+  float *signalsTSummary = const_cast<float*>(signals[1].data());
   float *meanTemperaturesSummary = const_cast<float*>(meanTemperatures.data());
   float *pedestals = const_cast<float*>(calib.GetPedestals().data());
   float *calibConstants = const_cast<float*>(calib.GetCalibrationFactors().data());
@@ -840,6 +840,7 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   recoTreeSummary->Branch("timestamp", &timestamp, "timestamp/L");
   recoTreeSummary->Branch("febID", febID, Form("febID[%i]/I",numberOfFebs));
   recoTreeSummary->Branch("spillsRecorded", &nSpillsActual, "spillsRecorded/I");
+  recoTreeSummary->Branch("eventsRecorded", &nEventsActual, "eventsRecorded/I");
   recoTreeSummary->Branch("febSpills", nFebSpillsActual, Form("febSpills[%i]/I",numberOfFebs));
   recoTreeSummary->Branch("febTemperaturesAvg", febTemperaturesAvg, Form("febTemperaturesAvg[%i]/F",numberOfFebs));
   recoTreeSummary->Branch("supplyMonitorsAvg", supplyMonitorsAvg, Form("supplyMonitorsAvg[%i][%i]/F",numberOfFebs,8));
@@ -850,8 +851,8 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   recoTreeSummary->Branch("PEsTemperatureCorrected", mpvsTSummary, Form("PEsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("FWHMs", fwhmsSummary, Form("FWHMs[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("FWHMsTemperatureCorrected", fwhmsTSummary, Form("FWHMsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
-  recoTreeSummary->Branch("signals", areasSummary, Form("signals[%i][%i]/F",numberOfFebs,channelsPerFeb));
-  recoTreeSummary->Branch("signalsTemperatureCorrected", areasTSummary, Form("signalsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("signals", signalsSummary, Form("signals[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("signalsTemperatureCorrected", signalsTSummary, Form("signalsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("meanTemperatures", meanTemperaturesSummary, Form("meanTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("pedestals", pedestals, Form("pedestals[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("calibConstants", calibConstants, Form("calibConstants[%i][%i]/F",numberOfFebs,channelsPerFeb));
@@ -888,8 +889,8 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
       txtFile<<std::setw(8)<<fwhms[0][index]<<"  ";
       txtFile<<std::setw(8)<<fwhms[1][index]<<"     ";
       txtFile<<std::setprecision(0);
-      txtFile<<std::setw(8)<<areas[0][index]<<"  ";
-      txtFile<<std::setw(8)<<areas[1][index]<<"     ";
+      txtFile<<std::setw(8)<<signals[0][index]<<"  ";
+      txtFile<<std::setw(8)<<signals[1][index]<<"     ";
       txtFile<<std::setprecision(1);
       txtFile<<std::setw(8)<<meanTemperatures[index]<<"     ";
       txtFile<<std::setw(8)<<calib.GetPedestals()[index]<<"  ";
@@ -904,8 +905,8 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
       std::cout<<std::setw(8)<<fwhms[0][index]<<"  ";
       std::cout<<std::setw(8)<<fwhms[1][index]<<"     ";
       std::cout<<std::setprecision(0);
-      std::cout<<std::setw(8)<<areas[0][index]<<"  ";
-      std::cout<<std::setw(8)<<areas[1][index]<<"     ";
+      std::cout<<std::setw(8)<<signals[0][index]<<"  ";
+      std::cout<<std::setw(8)<<signals[1][index]<<"     ";
       std::cout<<std::setprecision(1);
       std::cout<<std::setw(8)<<meanTemperatures[index]<<"     ";
       std::cout<<std::setw(8)<<calib.GetPedestals()[index]<<"  ";
@@ -1159,7 +1160,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
 
   std::vector<float> mpvs[2];
   std::vector<float> fwhms[2];
-  std::vector<float> areas[2];
+  std::vector<float> signals[2];
   std::vector<float> meanTemperatures;
   for(int feb=0; feb<numberOfFebs; feb++)
   {
@@ -1175,11 +1176,11 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
 
         float mpv=0;
         float fwhm=0;
-        float area=0;
-        LandauGauss(*h[i], mpv, fwhm, area);
+        float nsignals=0;
+        LandauGauss(*h[i], mpv, fwhm, nsignals);
         mpvs[i].push_back(mpv);
         fwhms[i].push_back(fwhm);
-        areas[i].push_back(area);
+        signals[i].push_back(nsignals);
         h[i]->GetXaxis()->SetRange(15,150);
         h[i]->Draw();
 
@@ -1189,7 +1190,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         t[i]->SetTextAlign(12);
         t[i]->AddText(Form("MPV: %.1f PEs",mpv));
         t[i]->AddText(Form("FWHM: %.1f PEs",fwhm));
-        t[i]->AddText(Form("Signals: %.0f",area));
+        t[i]->AddText(Form("Signals: %.0f",nsignals));
         t[i]->Draw("same");
       }    
 
@@ -1216,7 +1217,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
     }
   }
 
-  StorePEyields(txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, areas, meanTemperatures, treeSpills, nEvents, calib);
+  StorePEyields(txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, meanTemperatures, treeSpills, nEvents, calib);
 
   Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms);
 

@@ -33,7 +33,8 @@ chmod 777 recoCrv
 
 inputfileRemote="$(sed "$((PROCESS+1))q;d" rawfiles.txt)"
 inputfile="$(basename $inputfileRemote)"
-runAndSubrun=${inputfile: -14: -4}
+IFS='.' read -ra filenameArray <<< "$inputfile"
+runAndSubrun=${filenameArray[4]}
 ifdh cp $inputfileRemote $inputfile
 date
 
@@ -94,8 +95,11 @@ ifdh cp crvreco/$r3 $OUTPUTDIR/crvreco/$r3
 date
 
 # create log file
-LOGFILE=log'_'$JOBNAME'_'$PROCESS'_'$runAndSubrun'.log'
-cat jsb_tmp/JOBSUB_LOG_FILE >> $LOGFILE
-echo "=========== error log file ==========" >> $LOGFILE
-cat jsb_tmp/JOBSUB_ERR_FILE >> $LOGFILE
-ifdh cp $LOGFILE "$OUTPUTDIR/log/$LOGFILE"
+filenameArray[0]="log"
+filenameArray[5]="txt"
+logfile=$(printf ".%s" "${filenameArray[@]}")
+logfile=${logfile:1}
+cat jsb_tmp/JOBSUB_LOG_FILE >> $logfile
+echo "=========== error log file ==========" >> $logfile
+cat jsb_tmp/JOBSUB_ERR_FILE >> $logfile
+ifdh cp $logfile "$OUTPUTDIR/log/$logfile"
