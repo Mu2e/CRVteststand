@@ -36,7 +36,6 @@ class EventTree
   void ReadSpill();
   void FillSpill();
   bool AtEOF() {return _inFile.eof();}
-  int  GetSpillNumber() {return _spillNumber;}
 
   private:
   std::string    _runNumber;
@@ -59,12 +58,14 @@ class EventTree
   int    _channelsPerFeb;
   int    _numberOfSamples;
   size_t _nEvents;  //from spill header
-  int    _spillNumber;
+  int    _spillIndex; //increased for every spill
+  int    _spillNumber; //from FEB spill header
   int    _eventNumber;
   int   *_boardStatus;  //need one board status for each FEB
 
-  //time stamp stored only for the first spill of the first subrun
-  struct tm  _timestamp;
+  //older files: time stamp stored only for the first spill of the first subrun
+  struct tm  _timestampStruct;
+  time_t     _timestamp;  //=long
 
   long   *_tdcSinceSpill;
   double *_timeSinceSpill;
@@ -84,7 +85,7 @@ class EventTree
 EventTree::EventTree(const std::string &runNumber, const std::string &inFileName, const std::string &outFileName,
                      const int channelsPerFeb, const int numberOfSamples) : 
                      _runNumber(runNumber), _inFileName(inFileName), _outFileName(outFileName), _binary(false), 
-                     _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples)
+                     _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _spillIndex(0)
 {
   _file = new TFile(_outFileName.c_str(), "recreate");
   _tree = new TTree("run","run");
@@ -159,13 +160,17 @@ EventTree::~EventTree()
 
 void EventTree::PrepareTree()
 {
+  _tree->Branch("runtree_spill_index", &_spillIndex, "runtree_spill_index/I");
   _tree->Branch("runtree_spill_num", &_spillNumber, "runtree_spill_num/I");
   _tree->Branch("runtree_event_num", &_eventNumber, "runtree_event_num/I");
   _tree->Branch("runtree_tdc_since_spill", _tdcSinceSpill, Form("runtree_tdc_since_spill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_time_since_spill", _timeSinceSpill, Form("runtree_time_since_spill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_adc", _adc, Form("runtree_adc[%i][%i][%i]/I",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
   _tree->Branch("runtree_temperature", _temperature, Form("runtree_temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
+  _tree->Branch("runtree_boardStatus", _boardStatus, Form("runtree_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
+  _tree->Branch("runtree_spillTimestamp", &_timestamp, "runtree_spillTimestamp/L");
 
+  _treeSpills->Branch("spill_index", &_spillIndex, "spill_index/I");
   _treeSpills->Branch("spill_num", &_spillNumber, "spill_num/I");
   _treeSpills->Branch("spill_nevents", &_nEvents, "spill_nevents/I");
   _treeSpills->Branch("spill_neventsActual", &_nEventsActual, "spill_neventsActual/I");
@@ -174,15 +179,16 @@ void EventTree::PrepareTree()
   _treeSpills->Branch("spill_channels_per_feb", &_channelsPerFeb, "spill_channels_per_feb/I");
   _treeSpills->Branch("spill_number_of_samples", &_numberOfSamples, "spill_number_of_samples/I");
   _treeSpills->Branch("spill_boardStatus", _boardStatus, Form("spill_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
-  _treeSpills->Branch("spill_timestamp_sec", &_timestamp.tm_sec);
-  _treeSpills->Branch("spill_timestamp_min", &_timestamp.tm_min);
-  _treeSpills->Branch("spill_timestamp_hour", &_timestamp.tm_hour);
-  _treeSpills->Branch("spill_timestamp_mday", &_timestamp.tm_mday);
-  _treeSpills->Branch("spill_timestamp_mon", &_timestamp.tm_mon);
-  _treeSpills->Branch("spill_timestamp_year", &_timestamp.tm_year);
-  _treeSpills->Branch("spill_timestamp_wday", &_timestamp.tm_wday);
-  _treeSpills->Branch("spill_timestamp_yday", &_timestamp.tm_yday);
-  _treeSpills->Branch("spill_timestamp_isdst", &_timestamp.tm_isdst);
+  _treeSpills->Branch("spill_timestamp", &_timestamp, "spill_timestamp/L");
+  _treeSpills->Branch("spill_timestamp_sec", &_timestampStruct.tm_sec);
+  _treeSpills->Branch("spill_timestamp_min", &_timestampStruct.tm_min);
+  _treeSpills->Branch("spill_timestamp_hour", &_timestampStruct.tm_hour);
+  _treeSpills->Branch("spill_timestamp_mday", &_timestampStruct.tm_mday);
+  _treeSpills->Branch("spill_timestamp_mon", &_timestampStruct.tm_mon);
+  _treeSpills->Branch("spill_timestamp_year", &_timestampStruct.tm_year);
+  _treeSpills->Branch("spill_timestamp_wday", &_timestampStruct.tm_wday);
+  _treeSpills->Branch("spill_timestamp_yday", &_timestampStruct.tm_yday);
+  _treeSpills->Branch("spill_timestamp_isdst", &_timestampStruct.tm_isdst);
 }
 
 void EventTree::Finish()
@@ -377,9 +383,11 @@ bool EventTree::ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD
 void EventTree::ReadSpill()
 {
   _spill.clear();
-  _timestamp = {0,0,0,0,0,0,0,0,0};
+  _timestampStruct = {0,0,0,0,0,0,0,0,-1};
+  _timestamp = 0;
 
   std::cout<<"start new spill"<<std::endl;
+  ++_spillIndex;
   int feb=-1;
 
   while(1)
@@ -391,8 +399,24 @@ void EventTree::ReadSpill()
     if(line.find("START OF RUN")!=std::string::npos)
     {
       std::string timestampString=line.substr(19);
-      if(strptime(timestampString.c_str(), "%m/%d/%Y %I:%M:%S %p", &_timestamp)!=NULL)
+      if(strptime(timestampString.c_str(), "%m/%d/%Y %I:%M:%S %p", &_timestampStruct)!=NULL)
       {
+        _timestamp=mktime(&_timestampStruct);
+        std::cout<<"Found time stamp "<<timestampString<<std::endl;
+      }
+    }
+  
+    if(line.find("timestamp")!=std::string::npos)
+    {
+      if(feb!=-1) //haven't started a new spill, yet
+      {
+        _inFile.seekg(startOfSpill);
+        return;
+      }
+      std::string timestampString=line.substr(10);
+      if(strptime(timestampString.c_str(), "%m/%d/%Y %I:%M:%S %p", &_timestampStruct)!=NULL)
+      {
+        _timestamp=mktime(&_timestampStruct);
         std::cout<<"Found time stamp "<<timestampString<<std::endl;
       }
     }
@@ -402,7 +426,7 @@ void EventTree::ReadSpill()
 
     std::streampos potential2ndBeginOfSpill = _inFile.tellg();
     if(!getline(_inFile, line)) return;   //end of file
-    if(line.find("--Begin of spill")<=1)        //Found a subsequent "Begin of spill" marker.
+    if(line.find("--Begin of spill")<=1 || line.find("timestamp")!=std::string::npos)        //Found a subsequent "Begin of spill" marker.
     {                                           //This can happen, if there was a problem with
       _inFile.seekg(potential2ndBeginOfSpill);  //the FEB from the previous "Begin of spill" marker.
       _missingFebs=true;

@@ -31,6 +31,7 @@
 # include "TPaveText.h"
 # include "TFitResult.h"
 # include "TMarker.h"
+# include "TSystem.h"
 
 const double CRV_TDC_RATE    = 159.324e6;  // Hz
 const double RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
@@ -42,7 +43,7 @@ class CrvEvent
   void     FillPedestalHistograms(int entry);
   void     CalculatePedestal();
   void     FillCalibrationHistograms(int entry);
-  void     CalculateCalibrationConstants(const std::string &pdfFileName);
+  void     CalculateCalibrationConstants(const std::string &pdfFileName, int nPEpeaksToFit);
   void     StorePedestalAndCalibrationConstants(std::ofstream &calibFile);
   void     Summarize(const std::string &pdfFileName);
 
@@ -60,8 +61,8 @@ class CrvEvent
   
   TTree *_tree;
 
-  int     _spillNumber;
-  int    *_lastSpillNumber;
+  int     _spillIndex;
+  int    *_lastSpillIndex;
   int     _eventNumber;
   int    *_tdcSinceSpill;
   double *_timeSinceSpill;
@@ -84,7 +85,7 @@ class CrvEvent
   {
     TH1F*   _calibrationHist;
     bool    _noCalibration;
-    bool    _no2ndPeak;
+    size_t  _nPEpeaks;
     double  _calibrationConstant;
     double  _noiseRate;
     double  _xtalkProbability;
@@ -112,13 +113,13 @@ CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int n
   }
   if(_calibTemperatureIntercept==-1.0) {std::cerr<<"calibTemperatureIntercept missing in config.txt"<<std::endl; exit(1);}
 
-  _lastSpillNumber= new int[_numberOfFebs*_channelsPerFeb];
+  _lastSpillIndex = new int[_numberOfFebs*_channelsPerFeb];
   _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
 //  _timeSinceSpill = new double[_numberOfFebs];  //OLD
   _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
 
-  tree->SetBranchAddress("runtree_spill_num", &_spillNumber);
+  tree->SetBranchAddress("runtree_spill_index", &_spillIndex);
   tree->SetBranchAddress("runtree_adc", _adc);
   tree->SetBranchAddress("runtree_time_since_spill", _timeSinceSpill);
   tree->SetBranchAddress("runtree_temperature", _temperature);
@@ -141,7 +142,7 @@ CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int n
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
-      _lastSpillNumber[index]=-1;
+      _lastSpillIndex[index]=-1;
       _draw1PE[index]=true;
       _draw2PE[index]=true;
       _canvas[index]=new TCanvas();
@@ -399,16 +400,16 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
       }//peaks
 
       //fill temperature plot
-      if(_temperature[index]!=0 && _lastSpillNumber[index]!=_spillNumber)
+      if(_temperature[index]!=0 && _lastSpillIndex[index]!=_spillIndex)
       {
-        _temperatureHist[index]->SetPoint(_temperatureHist[index]->GetN(),_temperatureHist[index]->GetN(),_temperature[index]);
-        _lastSpillNumber[index]=_spillNumber;
+        _temperatureHist[index]->SetPoint(_spillIndex,_spillIndex,_temperature[index]);
+        _lastSpillIndex[index]=_spillIndex;
       }
 
     }//channel
   }//feb
 }
-void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName)
+void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int nPEpeaksToFit)
 {
 //std::cout<<"REMOVED 2ND PE PEAK"<<std::endl;
   for(int i=0; i<_numberOfFebs; i++)
@@ -444,8 +445,8 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName)
       for(int k=0; k<2; ++k) //k=0: no temperature correction, k=1: temperature correction
       {
         calibStruct &CS =_calibVector[k][index];
-        CS._noCalibration=false;
-        CS._no2ndPeak=false;
+        CS._noCalibration=true;
+        CS._nPEpeaks=0;
         CS._noiseRate=0;
         CS._xtalkProbability=0;
         CS._calibrationConstant=0;
@@ -485,27 +486,40 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName)
         CS._calibrationHist->Fit(&func1, "QR");
         peak1PE = func1.GetParameter(1);
 
-        double peak2PE = 2.0*peak1PE;
-        TF1 func2("f2", "gaus",peak2PE*0.83,peak2PE*1.17);
-        func2.SetParameter(1,peak2PE);
-        func2.SetLineWidth(1);
-        func2.SetLineColor(kRed);
-        CS._calibrationHist->Fit(&func2, "QR");
-        peak2PE = func2.GetParameter(1);
-
-        bool no1PEpeak=false;
-        bool no2PEpeak=false;
-        if(peak1PE<200.0 || peak1PE>1800.0) no1PEpeak=true;    //200...1100
-        if(peak2PE/peak1PE>2.1 || peak2PE/peak1PE<1.9) no2PEpeak=true;
-        if(no1PEpeak) no2PEpeak=true;
-
-//no2PEpeak=true;
+        std::vector<double> peaks;
+        if(peak1PE>200.0 && peak1PE<1800.0)
+        {
+          peaks.push_back(peak1PE);
+          func1.DrawClone("same");
+          for(int iPeak=2; iPeak<=nPEpeaksToFit; ++iPeak)
+          {
+            double peakTmp = iPeak*peak1PE;
+            double rangeStart = peakTmp-0.35*peak1PE;
+            double rangeEnd = peakTmp+0.35*peak1PE;
+            if(rangeEnd>CS._calibrationHist->GetXaxis()->GetXmax()) break;
+            if(CS._calibrationHist->Integral(CS._calibrationHist->FindFixBin(rangeStart),CS._calibrationHist->FindFixBin(rangeEnd))<50) break;
+            TF1 func2(Form("f%i",iPeak), "gaus",rangeStart,rangeEnd);
+            func2.SetParameter(1,peakTmp);
+            func2.SetLineWidth(1);
+            func2.SetLineColor(kRed);
+            if((int)CS._calibrationHist->Fit(&func2, "QR")!=0) break;
+            peakTmp = func2.GetParameter(1);
+            if(peakTmp/peak1PE>iPeak*0.95 && peakTmp/peak1PE<iPeak*1.05)
+            {
+              peaks.push_back(peakTmp);
+              func2.DrawClone("same");
+            }
+            else break;
+          }
+        }
+        CS._nPEpeaks=peaks.size();
 
         TPaveText t2(.50, .65, .89, .89, "NDC");
         t2.SetFillColor(0);
-        if(!no1PEpeak) t2.AddText(Form("1PE = %4.0lf ADC*ns", peak1PE));
-        else t2.AddText("                              ");
-        if(!no2PEpeak) t2.AddText(Form("2PE = %4.0lf ADC*ns", peak2PE));
+        for(size_t iPeak=0; iPeak<peaks.size(); ++iPeak)
+        {
+          t2.AddText(Form("%luPE = %4.0lf ADC*ns", iPeak+1,peaks[iPeak]));
+        }
 
         if(k==1)
         {
@@ -513,17 +527,12 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName)
           t2.AddText(Form("refT %.1f deg C, calibT0 %.1f deg C",_referenceTemperature,_calibTemperatureIntercept));
         }
 
-        func1.DrawClone("SAME");
-        func2.DrawClone("SAME");
-
-        if(no1PEpeak)
+        if(peaks.empty())
         {
           t2.DrawClone("SAME");
-          CS._noCalibration=true;
           if(k==1) _canvas[index]->Print(pdfFileName.c_str(), "pdf");
           continue;
         }
-        if(no2PEpeak) CS._no2ndPeak=true;
 
         //cross-talk and noise
         double events1PEandMore=0;
@@ -548,32 +557,26 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName)
         gPad->cd(k+1);  //non-temperature corrected and temperature corrected calib fits
         gPad->SetLogy(0);
 
-        double num[3]={0.,1.,2.};
-        double adc[3]={0.,peak1PE, peak2PE};
-        TGraph *graph=new TGraph(3, num, adc);
-        if(no2PEpeak) graph->RemovePoint(2);
+        TGraph *graph=new TGraph();
+        graph->SetPoint(0,0,0);
+        for(size_t iPeak=0; iPeak<peaks.size(); ++iPeak) graph->SetPoint(iPeak+1,iPeak+1,peaks[iPeak]);
         if(k==0) graph->SetTitle(Form("FEB%i Ch%i Calib. Fit; n PE peak; Area [ADC*ns]",i,j));
         else graph->SetTitle(Form("FEB%i Ch%i Temp. corrected calib fit; n PE peak; Area [ADC*ns]",i,j));
-        graph->GetXaxis()->SetRangeUser(0, 2.5);
-        graph->GetYaxis()->SetRangeUser(0, 2.5*peak1PE);
+        graph->GetXaxis()->SetRangeUser(0, peaks.size()+0.5);
+        graph->GetYaxis()->SetRangeUser(0, peaks[0]*(peaks.size()+0.5));
         graph->SetMarkerStyle(20);
         graph->SetMarkerColor(kBlack);
         graph->Draw("AP");
-        if(no2PEpeak)
-        {
-          TMarker marker(2., peak2PE, 0);
-          marker.SetMarkerStyle(47);
-          marker.Draw("same");
-        }
 
-        TF1 funcFit("calibration","[0]*x", -0.5, 2.5);
-        graph->Fit(&funcFit, "QRS");
+        TF1 funcFit("calibration","[0]*x", -0.5, peaks.size()+0.5);
         funcFit.SetLineColor(kRed);
+        graph->Fit(&funcFit, "QR");
         funcFit.DrawClone("SAME");
         CS._calibrationConstant = funcFit.GetParameter(0);
 
         TPaveText t3(.15, .65, .7, .88, "NDC");
-        t3.SetFillColor(0);
+        t3.SetLineColorAlpha(0,0);
+        t3.SetFillStyle(0);
         t3.AddText("Calibration constant");
         t3.AddText(Form("%.0lf ADC*ns/PE", CS._calibrationConstant));
         t3.SetTextAlign(12);
@@ -742,7 +745,7 @@ void CrvEvent::Summarize(const std::string &pdfFileName)
       for(int j=0; j<_channelsPerFeb; j++)
       {
         int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
-        if(_calibVector[k][index]._no2ndPeak) channelNumbers.push_back(j);
+        if(_calibVector[k][index]._nPEpeaks<2) channelNumbers.push_back(j);
       }
       std::string sequence=CreateSequenceString(channelNumbers);
       t4->AddText(Form("FEB %i: %s", i, sequence.c_str()));
@@ -837,14 +840,15 @@ void CrvEvent::Summarize(const std::string &pdfFileName)
   summaryCanvas2.Print(pdfFileName.c_str(), "pdf");
 }
 
-void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &pdfFileName)
+void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &pdfFileName, int nPEpeaksToFit)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
 
   std::ofstream calibFile;
-  calibFile.open(calibFileName.c_str());
+  calibFile.open(calibFileName.c_str(),std::ios_base::trunc);
 	
+  gSystem->Unlink(pdfFileName.c_str());
   TCanvas c0;
   c0.Print(Form("%s[", pdfFileName.c_str()), "pdf");
 
@@ -871,7 +875,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   for(int i=0; i<nEvents; i++) event.FillPedestalHistograms(i);
   event.CalculatePedestal();
   for(int i=0; i<nEvents; i++) event.FillCalibrationHistograms(i);
-  event.CalculateCalibrationConstants(pdfFileName);
+  event.CalculateCalibrationConstants(pdfFileName, nPEpeaksToFit);
   event.StorePedestalAndCalibrationConstants(calibFile);
   event.Summarize(pdfFileName);
 
@@ -939,8 +943,12 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
 void printHelp()
 {
   std::cout<<"Usa as"<<std::endl;
-  std::cout<<"calibCrv -h             Prints this help."<<std::endl;
-  std::cout<<"calibCrv RUNNUMBER      Calibrates a run."<<std::endl;
+  std::cout<<"calibCrv -h                   Prints this help."<<std::endl;
+  std::cout<<"calibCrv RUNNUMBER [OPTIONS]  Calibrates a run."<<std::endl;
+  std::cout<<std::endl;
+  std::cout<<"Options:"<<std::endl;
+  std::cout<<"-p   number of PE peaks fitted"<<std::endl;
+  std::cout<<"     default: 1"<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -962,7 +970,13 @@ int main(int argc, char **argv)
   std::string pdfFileName;
   makeFileNames(runNumber, inFileName, calibFileName, pdfFileName);
 
-  process(runNumber, inFileName, calibFileName, pdfFileName);
+  int nPEpeaksToFit = 1;
+  for(int i=2; i<argc-1; i++)
+  {
+    if(strcmp(argv[i],"-p")==0) nPEpeaksToFit=atoi(argv[i+1]);
+  }
+
+  process(runNumber, inFileName, calibFileName, pdfFileName, nPEpeaksToFit);
 
   return 0;
 }

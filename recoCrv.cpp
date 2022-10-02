@@ -31,6 +31,7 @@
 # include "TLine.h"
 # include "TPaveText.h"
 # include "TFitResult.h"
+# include "TSystem.h"
 
 const float CRV_TDC_RATE    = 159.324e6;  // Hz
 const float RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
@@ -323,14 +324,17 @@ class CrvEvent
   TTree *_tree;
   TTree *_recoTree;
 
+  int     _spillIndex;
   int     _spillNumber;
-  int    *_lastSpillNumber;
+  int    *_lastSpillIndex;
   int     _eventNumber;
   //int    *_tdcSinceSpill;  //OLD
   Long64_t *_tdcSinceSpill;
   double *_timeSinceSpill;
   int    *_adc;
   float  *_temperature;
+  int    *_boardStatus;
+  time_t  _timestamp;  //=long
 
   int    *_fitStatus;
   float  *_PEs;
@@ -382,20 +386,24 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   if(_PETemperatureIntercept==-1.0) {std::cerr<<"PETemperatureIntercept missing in config.txt"<<std::endl; exit(1);}
   if(_calibTemperatureIntercept==-1.0) {std::cerr<<"calibTemperatureIntercept missing in config.txt"<<std::endl; exit(1);}
 
-  _lastSpillNumber= new int[_numberOfFebs*_channelsPerFeb];
+  _lastSpillIndex = new int[_numberOfFebs*_channelsPerFeb];
 //  _tdcSinceSpill  = new int[_numberOfFebs];  //OLD
 //  _timeSinceSpill = new double[_numberOfFebs];  //OLD
   _tdcSinceSpill  = new Long64_t[_numberOfFebs*_channelsPerFeb];
   _timeSinceSpill = new double[_numberOfFebs*channelsPerFeb];
   _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
+  _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
 
+  tree->SetBranchAddress("runtree_spill_index", &_spillIndex);
   tree->SetBranchAddress("runtree_spill_num", &_spillNumber);
   tree->SetBranchAddress("runtree_event_num",&_eventNumber);
   tree->SetBranchAddress("runtree_tdc_since_spill", _tdcSinceSpill);
   tree->SetBranchAddress("runtree_time_since_spill", _timeSinceSpill);
   tree->SetBranchAddress("runtree_adc", _adc);
   tree->SetBranchAddress("runtree_temperature", _temperature);
+  tree->SetBranchAddress("runtree_boardStatus", _boardStatus);
+  tree->SetBranchAddress("runtree_spillTimestamp", &_timestamp);
 
   _fitStatus               = new int[_numberOfFebs*_channelsPerFeb];
   _PEs                     = new float[_numberOfFebs*_channelsPerFeb];
@@ -418,7 +426,10 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _recoStartBinReflectedPulse            = new int[_numberOfFebs*_channelsPerFeb];
   _recoEndBinReflectedPulse              = new int[_numberOfFebs*_channelsPerFeb];
 
+  recoTree->Branch("spillIndex", &_spillIndex, "spillIndex/I");
   recoTree->Branch("spillNumber", &_spillNumber, "spillNumber/I");
+  recoTree->Branch("boardStatus", _boardStatus, Form("boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
+  recoTree->Branch("spillTimestamp", &_timestamp, "spillTimestamp/L");
   recoTree->Branch("eventNumber", &_eventNumber, "eventNumber/I");
   recoTree->Branch("tdcSinceSpill", _tdcSinceSpill, Form("tdcSinceSpill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("timeSinceSpill", _timeSinceSpill, Form("timeSinceSpill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
@@ -454,7 +465,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
-      _lastSpillNumber[index]=-1;
+      _lastSpillIndex[index]=-1;
       _plot[index]=4;
       _canvas[index]=new TCanvas();
       _canvas[index]->Divide(2,2);
@@ -553,10 +564,10 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
         _histPEs[index]->Fill(reco._PEs[0]);
         _histPEsTemperatureCorrected[index]->Fill(_PEsTemperatureCorrected[index]);
       }
-      if(_temperature[index]!=0 && _lastSpillNumber[index]!=_spillNumber)
+      if(_temperature[index]!=0 && _lastSpillIndex[index]!=_spillIndex)
       {
-        _histTemperatures[index]->SetPoint(_histTemperatures[index]->GetN(),_histTemperatures[index]->GetN(),_temperature[index]);
-        _lastSpillNumber[index]=_spillNumber;
+        _histTemperatures[index]->SetPoint(_spillIndex,_spillIndex,_temperature[index]);
+        _lastSpillIndex[index]=_spillIndex;
       }
     }
   }
@@ -677,25 +688,15 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   int   nEventsExpected;
   int   nEventsActual;
   bool  spillStored;
-  struct tm  timestampStruct;
   int  *boardStatus = new int[numberOfFebs*BOARD_STATUS_REGISTERS];
   treeSpills->SetBranchAddress("spill_nevents", &nEventsExpected);
   treeSpills->SetBranchAddress("spill_neventsActual", &nEventsActual);
   treeSpills->SetBranchAddress("spill_stored", &spillStored);
   treeSpills->SetBranchAddress("spill_boardStatus", boardStatus);
-  treeSpills->SetBranchAddress("spill_timestamp_sec", &timestampStruct.tm_sec);
-  treeSpills->SetBranchAddress("spill_timestamp_min", &timestampStruct.tm_min);
-  treeSpills->SetBranchAddress("spill_timestamp_hour", &timestampStruct.tm_hour);
-  treeSpills->SetBranchAddress("spill_timestamp_mday", &timestampStruct.tm_mday);
-  treeSpills->SetBranchAddress("spill_timestamp_mon", &timestampStruct.tm_mon);
-  treeSpills->SetBranchAddress("spill_timestamp_year", &timestampStruct.tm_year);
-  treeSpills->SetBranchAddress("spill_timestamp_wday", &timestampStruct.tm_wday);
-  treeSpills->SetBranchAddress("spill_timestamp_yday", &timestampStruct.tm_yday);
-  treeSpills->SetBranchAddress("spill_timestamp_isdst", &timestampStruct.tm_isdst);
+  treeSpills->SetBranchAddress("spill_timestamp", &timestamp);
 
   treeSpills->GetEntry(0);
-  txtFile<<"timestamp: "<<asctime(&timestampStruct);
-  timestamp=mktime(&timestampStruct);
+  txtFile<<"timestamp: "<<ctime(&timestamp);
 
   int nEventsExpectedTotal=0;   //of the spills that were stored
   int nEventsActualTotal=0;
@@ -764,7 +765,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 
   txtFile<<std::fixed;
   txtFile<<std::setprecision(2);
-  txtFile<<"FEB  ID   spills  FEBtemp  15Vmon  10Vmon  5Vmon   -5Vmon  3.3Vmon 2.5Vmon 1.8Vmon  1.2Vmon"<<std::endl;
+  txtFile<<"FEB  ID   spills  FEBtemp 1.2Vmon  1.8Vmon  5Vmon  10Vmon  2.5Vmon -5Vmon  15Vmon  3.3Vmon"<<std::endl;
   for(int feb=0; feb<numberOfFebs; ++feb)
   {
     if(nFebSpillsActual[feb]>0)
@@ -859,7 +860,7 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   recoTreeSummary->Branch("calibConstantsTemperatureCorrected", calibConstantsT, Form("calibConstantsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
 
   std::ofstream txtFile;
-  txtFile.open(txtFileName.c_str());
+  txtFile.open(txtFileName.c_str(),std::ios_base::trunc);
  
   timestamp=0;
   nSpillsActual=0; 
@@ -1153,6 +1154,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
 //if(nEvents>10000) nEvents=10000;
 
+  gSystem->Unlink(pdfFileName.c_str());
   TCanvas c0;
   c0.Print(Form("%s[", pdfFileName.c_str()), "pdf");
 
