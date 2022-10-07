@@ -429,7 +429,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("spillIndex", &_spillIndex, "spillIndex/I");
   recoTree->Branch("spillNumber", &_spillNumber, "spillNumber/I");
   recoTree->Branch("boardStatus", _boardStatus, Form("boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
-  recoTree->Branch("spillTimestamp", &_timestamp, "spillTimestamp/L");
+  recoTree->Branch("spillTimestamp", &_timestamp);
   recoTree->Branch("eventNumber", &_eventNumber, "eventNumber/I");
   recoTree->Branch("tdcSinceSpill", _tdcSinceSpill, Form("tdcSinceSpill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("timeSinceSpill", _timeSinceSpill, Form("timeSinceSpill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
@@ -685,6 +685,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 {
   if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
 
+  time_t timestampTmp;
   int   nEventsExpected;
   int   nEventsActual;
   bool  spillStored;
@@ -693,9 +694,10 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   treeSpills->SetBranchAddress("spill_neventsActual", &nEventsActual);
   treeSpills->SetBranchAddress("spill_stored", &spillStored);
   treeSpills->SetBranchAddress("spill_boardStatus", boardStatus);
-  treeSpills->SetBranchAddress("spill_timestamp", &timestamp);
+  treeSpills->SetBranchAddress("spill_timestamp", &timestampTmp);
 
   treeSpills->GetEntry(0);
+  timestamp=timestampTmp;  //to get the time stamp of the first spill, that gets overwritten at the next GetEntry calls
   txtFile<<"timestamp: "<<ctime(&timestamp);
 
   int nEventsExpectedTotal=0;   //of the spills that were stored
@@ -757,7 +759,6 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
     }
   }
 
-
   txtFile<<"Expected spills: "<<nSpillsExpected<<std::endl;
   txtFile<<"Stored spills:   "<<nSpillsActual<<std::endl;
   txtFile<<"Expected number of events (of all stored spills): "<<nEventsExpectedTotal<<std::endl;
@@ -800,7 +801,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   txtFile<<std::endl;
 }
 
-void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
+void StorePEyields(const std::string &runNumber, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
                    const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2],
                    const std::vector<float> &meanTemperatures, TTree *treeSpills, int nEventsActual, const Calibration &calib)
 {
@@ -818,6 +819,8 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   }
   settingsFile.close();
 
+  int   run=0;
+  int   subrun=0;
   time_t timestamp;  //=long
   int   *febID = new int[numberOfFebs];
   int    nSpillsActual;
@@ -838,7 +841,9 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   float *calibConstants = const_cast<float*>(calib.GetCalibrationFactors().data());
   float *calibConstantsT = const_cast<float*>(calib.GetCalibrationFactorsTemperatureCorrected().data());
   TTree *recoTreeSummary = new TTree("runSummary","runSummary");
-  recoTreeSummary->Branch("timestamp", &timestamp, "timestamp/L");
+  recoTreeSummary->Branch("runNumber", &run, "runNumber/I");
+  recoTreeSummary->Branch("subrunNumber", &subrun, "subrunNumber/I");
+  recoTreeSummary->Branch("timestamp", &timestamp);
   recoTreeSummary->Branch("febID", febID, Form("febID[%i]/I",numberOfFebs));
   recoTreeSummary->Branch("spillsRecorded", &nSpillsActual, "spillsRecorded/I");
   recoTreeSummary->Branch("eventsRecorded", &nEventsActual, "eventsRecorded/I");
@@ -858,6 +863,14 @@ void StorePEyields(const std::string &txtFileName, const int numberOfFebs, const
   recoTreeSummary->Branch("pedestals", pedestals, Form("pedestals[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("calibConstants", calibConstants, Form("calibConstants[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("calibConstantsTemperatureCorrected", calibConstantsT, Form("calibConstantsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+
+  size_t underscorePos = runNumber.rfind('_');
+  if(underscorePos==std::string::npos) run=atoi(runNumber.c_str());
+  else
+  {
+    run=atoi(runNumber.substr(0,underscorePos).c_str());
+    if(underscorePos+1<runNumber.size()) subrun=atoi(runNumber.substr(underscorePos+1).c_str());
+  }
 
   std::ofstream txtFile;
   txtFile.open(txtFileName.c_str(),std::ios_base::trunc);
@@ -1219,7 +1232,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
     }
   }
 
-  StorePEyields(txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, meanTemperatures, treeSpills, nEvents, calib);
+  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, meanTemperatures, treeSpills, nEvents, calib);
 
   Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms);
 

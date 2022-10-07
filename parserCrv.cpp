@@ -168,7 +168,7 @@ void EventTree::PrepareTree()
   _tree->Branch("runtree_adc", _adc, Form("runtree_adc[%i][%i][%i]/I",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
   _tree->Branch("runtree_temperature", _temperature, Form("runtree_temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_boardStatus", _boardStatus, Form("runtree_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
-  _tree->Branch("runtree_spillTimestamp", &_timestamp, "runtree_spillTimestamp/L");
+  _tree->Branch("runtree_spillTimestamp", &_timestamp);
 
   _treeSpills->Branch("spill_index", &_spillIndex, "spill_index/I");
   _treeSpills->Branch("spill_num", &_spillNumber, "spill_num/I");
@@ -179,7 +179,7 @@ void EventTree::PrepareTree()
   _treeSpills->Branch("spill_channels_per_feb", &_channelsPerFeb, "spill_channels_per_feb/I");
   _treeSpills->Branch("spill_number_of_samples", &_numberOfSamples, "spill_number_of_samples/I");
   _treeSpills->Branch("spill_boardStatus", _boardStatus, Form("spill_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
-  _treeSpills->Branch("spill_timestamp", &_timestamp, "spill_timestamp/L");
+  _treeSpills->Branch("spill_timestamp", &_timestamp);
   _treeSpills->Branch("spill_timestamp_sec", &_timestampStruct.tm_sec);
   _treeSpills->Branch("spill_timestamp_min", &_timestampStruct.tm_min);
   _treeSpills->Branch("spill_timestamp_hour", &_timestampStruct.tm_hour);
