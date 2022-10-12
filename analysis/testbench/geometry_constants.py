@@ -78,7 +78,7 @@ geom_dict_crvaging001 = {
     'FEB'           : [[1,0]],
     'badChannels'   : [],
     'triggerOnlyChs': [],
-    'canvasSize'    : (8,4)
+    'canvasSize'    : (8,2.4)
 }
 
 geom_dict_crvaging004 = {
@@ -90,7 +90,7 @@ geom_dict_crvaging004 = {
     'badChannels'   : [],
     'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)],
                       # 2-tuple list if channels are designated in the triggering layers 
-    'canvasSize'    : (8,8)
+    'canvasSize'    : (8,6)
 }
 
 geom_dict_crvaging006 = {
@@ -103,7 +103,7 @@ geom_dict_crvaging006 = {
     'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)] + 
                       [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)],
                       # 2-tuple list if channels are designated in the triggering layers 
-    'canvasSize'    : (8,12)
+    'canvasSize'    : (8,8)
 }
 
 # setup_dict can be used to retrieve geom dict (and number of FEBs) from the file names

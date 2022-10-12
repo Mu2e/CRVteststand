@@ -27,7 +27,7 @@ def dimensionGen(type, ndc = geometry_constants.dicounterPerLayer, nl = geometry
     if type != 'trans' and type != 'cis':
         sys.exit("Error: dimensionGen: 'type' cannot be " + type)
     offsetSign = 1 if type == 'trans' else -1
-    _chanY = np.array([[-sum(geometry_constants.gapBetweenLayers[:j])for i in range(4*ndc)] for j in range(nl)])
+    _chanY = np.array([[-geometry_constants.scintillatorBarThickness*j-sum(geometry_constants.gapBetweenLayers[:j])for i in range(4*ndc)] for j in range(nl)])
     _chanX = np.array([[geometry_constants.xFiberPosition[i%4]+geometry_constants.dicounterTranslationalX*int(i/4)+geometry_constants.layerOffset*j*offsetSign for i in range(4*ndc)] for j in range(nl)])
     dimension = {"channelX": _chanX,
                  "channelY": _chanY,
@@ -87,11 +87,11 @@ class testBenchGeometry:
                         sys.exit("Error: testBenchGeometry: 'FEB'[%i] needs to have a length of at least %i; fill in the blank with -1"%(index, 1+int(x.real)))
                     x[...] = 1j*x.imag + geom_dict['FEB'][index][int(x.real)]
             self.mappingFEBCh.append(tMap)
-
+        
         for item in dimensionNameList:
             self.coordinates[item] = np.array(self.coordinates[item])
         self.mappingFEBCh = np.array(self.mappingFEBCh)
-
+        
         self.idleMask = (self.mappingFEBCh.real == -1.)
 
         self.badChMask = (self.mappingFEBCh == None)
@@ -122,38 +122,48 @@ class testBenchGeometry:
         return tTuple
 
     def plotCntrCoordGen(self, mask):
-        tchtrX1_masked = self.coordinates['cntrX1'][mask]
+        tchtrX1_masked = self.coordinates['cntrX1'][mask] # this returns flattened array
         tchtrX2_masked = self.coordinates['cntrX2'][mask]
         tchtrY1_masked = self.coordinates['cntrY1'][mask]
         tchtrY2_masked = self.coordinates['cntrY2'][mask]
-        lineSegList = [[(tchtrX1_masked[ituple.multi_index], tchtrY1_masked[ituple.multi_index]),
-                        (tchtrX1_masked[ituple.multi_index], tchtrY2_masked[ituple.multi_index]),
-                        (tchtrX2_masked[ituple.multi_index], tchtrY2_masked[ituple.multi_index]),
-                        (tchtrX2_masked[ituple.multi_index], tchtrY1_masked[ituple.multi_index]),
-                        (tchtrX1_masked[ituple.multi_index], tchtrY1_masked[ituple.multi_index])] 
-                       for ituple in np.nditer(tchtrX1_masked, flags=['multi_index'])]
+        #tchtrX1_masked = np.ma.masked_where(~mask, self.coordinates['cntrX1']) # converting masked elements to NaN causes warnings
+        #tchtrX2_masked = np.ma.masked_where(~mask, self.coordinates['cntrX2'])
+        #tchtrY1_masked = np.ma.masked_where(~mask, self.coordinates['cntrY1'])
+        #tchtrY2_masked = np.ma.masked_where(~mask, self.coordinates['cntrY2'])
+        
+        lineSegList = []
+        if tchtrX1_masked.any():
+            with np.nditer(tchtrX1_masked, flags=['multi_index']) as it:
+                for x in it:
+                    lineSegList.append([(tchtrX1_masked[it.multi_index], tchtrY1_masked[it.multi_index]),
+                                        (tchtrX1_masked[it.multi_index], tchtrY2_masked[it.multi_index]),
+                                        (tchtrX2_masked[it.multi_index], tchtrY2_masked[it.multi_index]),
+                                        (tchtrX2_masked[it.multi_index], tchtrY1_masked[it.multi_index]),
+                                        (tchtrX1_masked[it.multi_index], tchtrY1_masked[it.multi_index])])
         return lineSegList
 
     def plotGeometry(self, ax, titleExtra = '', dotChannel = False, verbose = True):
         idleCounterMask = (self.idleMask[:, :, 1::2])&(self.idleMask[:, :, ::2])
         linesCoord_solid = self.plotCntrCoordGen(~idleCounterMask)
         linesCoord_dotted = self.plotCntrCoordGen(idleCounterMask)
-        lc_solid = mc.LineCollection(linesCoord_solid, linewidths=1, linestyles='solid', 
-                                     colors='#080808',alpha=0.8)
-        lc_dotted = mc.LineCollection(linesCoord_dotted, linewidths=1, linestyles='dotted', 
-                                     colors='#434343',alpha=0.8)
-        ax.add_collection(lc_solid)
-        ax.add_collection(lc_dotted)
+        if linesCoord_solid:
+            lc_solid = mc.LineCollection(linesCoord_solid, linewidths=0.5, linestyles='solid', 
+                                         colors='#080808',alpha=0.8)
+            ax.add_collection(lc_solid)
+        if linesCoord_dotted:
+            lc_dotted = mc.LineCollection(linesCoord_dotted, linewidths=0.5, linestyles='dotted', 
+                                         colors='#434343',alpha=0.8)
+            ax.add_collection(lc_dotted)
 
         if dotChannel:
             activeChMask = (~self.idleMask)&(~self.badChMask)
-            plt.scatter(self.coordinates['channelX'][activeChMask].flatten(),
-                        self.coordinates['channelY'][activeChMask].flatten(),
+            plt.scatter(self.coordinates['channelX'][activeChMask],
+                        self.coordinates['channelY'][activeChMask],
                         c='#080808', alpha=0.8, marker='.')
 
         crossMask = self.badChMask|(self.idleMask!=np.repeat(idleCounterMask, 2, axis=2))
-        plt.scatter(self.coordinates['channelX'][crossMask].flatten(),
-                    self.coordinates['channelY'][crossMask].flatten(),
+        plt.scatter(self.coordinates['channelX'][crossMask],
+                    self.coordinates['channelY'][crossMask],
                     c='#434343', alpha=0.8, marker='x')
         
         ax.set_title(self.tag+' '+titleExtra)
@@ -161,13 +171,15 @@ class testBenchGeometry:
         ax.set_ylabel('y [mm]')
 
         if verbose:
-            for ituple in np.nditer(self.mappingFEBCh, flags=['multi_index']):
-                if (self.mappingFEBCh[ituple].imag in [0,31,32, 63]) and self.mappingFEBCh[ituple].real>0:
-                    ax.text(self.coordinates['channelX'][ituple],self.coordinates['channelY'][ituple],
-                            'FEB%iCh%i'%(self.mappingFEBCh[ituple].real,self.mappingFEBCh[ituple].imag),
-                            color='blue',verticalalignment='top', horizontalalignment='center')
+            with np.nditer(self.mappingFEBCh, flags=['multi_index']) as it:
+                for x in it:
+                    if (self.mappingFEBCh[it.multi_index].imag in [0,31,32, 63]) and self.mappingFEBCh[it.multi_index].real>=0:
+                        ax.text(self.coordinates['channelX'][it.multi_index],self.coordinates['channelY'][it.multi_index]-2,
+                                '%i_%i'%(self.mappingFEBCh[it.multi_index].real,self.mappingFEBCh[it.multi_index].imag),
+                                color='black',verticalalignment='top', horizontalalignment='center',zorder = 5,fontsize = 3)
 
         ax.autoscale()
+        plt.axis('equal')
         return
 
 

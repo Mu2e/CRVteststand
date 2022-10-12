@@ -69,39 +69,39 @@ class crv_event:
         self.nFEB = nFEB
         self.temp_dict = {}
         self.iEntry = iEntry
-        self.nSample = int(np.size(runtree.runtree_adc if isRaw else runtree.adc)/nFEB/(constants.nChannel))
+        self.nSample = int(np.size(runtree.runtree_adc if isRaw else runtree.adc)/nFEB/(geometry_constants.nChannelPerFEB))
             
         # start filling in the contents using the trees 
         if (detailLevel & 0b1000):
             self.spillNumber = runtree.runtree_spill_num if isRaw else runtree.spillNumber #runtree_spill_num/I or spillNumber/I
             self.eventNumber = runtree.runtree_event_num if isRaw else runtree.eventNumber #runtree_event_num/I or eventNumber/I
-            self.temperature = np.reshape(runtree.runtree_temperature if isRaw else runtree.temperature, (nFEB, constants.nChannel)) #runtree_tdc_since_spill[4][64]/L or temperature[4][64]/F
-            self.pedestal = None if isRaw else np.reshape(runtree.pedestal, (nFEB, constants.nChannel)) #pedestal[4][64]/F
-            self.tdcSinceSpill = np.reshape(runtree.runtree_tdc_since_spill if isRaw else runtree.tdcSinceSpill, (nFEB, constants.nChannel)) #runtree_tdc_since_spill[4][64]/L or tdcSinceSpill[4][64]/L
-            self.timeSinceSpill = np.reshape(runtree.runtree_time_since_spill if isRaw else runtree.timeSinceSpill, (nFEB, constants.nChannel)) #runtree_time_since_spill[4][64]/D or timeSinceSpill[4][64]/D
-            self.fitStatus = None if isRaw else np.reshape(runtree.fitStatus, (nFEB, constants.nChannel)) #fitStatus[4][64]/I
-            self.fitStatusReflectedPulse = None if isRaw else np.reshape(runtree.fitStatusReflectedPulse, (nFEB, constants.nChannel)) #fitStatusReflectedPulse[4][64]/I
+            self.temperature = np.reshape(runtree.runtree_temperature if isRaw else runtree.temperature, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_tdc_since_spill[4][64]/L or temperature[4][64]/F
+            self.pedestal = None if isRaw else np.reshape(runtree.pedestal, (nFEB, geometry_constants.nChannelPerFEB)) #pedestal[4][64]/F
+            self.tdcSinceSpill = np.reshape(runtree.runtree_tdc_since_spill if isRaw else runtree.tdcSinceSpill, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_tdc_since_spill[4][64]/L or tdcSinceSpill[4][64]/L
+            self.timeSinceSpill = np.reshape(runtree.runtree_time_since_spill if isRaw else runtree.timeSinceSpill, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_time_since_spill[4][64]/D or timeSinceSpill[4][64]/D
+            self.fitStatus = None if isRaw else np.reshape(runtree.fitStatus, (nFEB, geometry_constants.nChannelPerFEB)) #fitStatus[4][64]/I
+            self.fitStatusReflectedPulse = None if isRaw else np.reshape(runtree.fitStatusReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #fitStatusReflectedPulse[4][64]/I
             # FIXME: global timestamp (from Spill time + time since spill)??? 
         if (detailLevel & 0b0100):
-            self.adc = np.reshape(runtree.runtree_adc if isRaw else runtree.adc, (nFEB, constants.nChannel, -1)) #adc[4][64][127]/I
+            self.adc = np.reshape(runtree.runtree_adc if isRaw else runtree.adc, (nFEB, geometry_constants.nChannelPerFEB, -1)) #adc[4][64][127]/I
         if (detailLevel & 0b0010):
-            self.PEs = np.reshape(runtree.PEs, (nFEB, constants.nChannel)) #PEs[4][64]/F
-            self.PEsTemperatureCorrected = np.reshape(runtree.PEsTemperatureCorrected, (nFEB, constants.nChannel)) #PEsTemperatureCorrected[4][64]/F
-            self.pulseHeight = np.reshape(runtree.pulseHeight, (nFEB, constants.nChannel)) #pulseHeight[4][64]/F
-            self.beta = np.reshape(runtree.beta, (nFEB, constants.nChannel)) #beta[4][64]/F
-            self.time = np.reshape(runtree.time, (nFEB, constants.nChannel)) #time[4][64]/F
-            self.LEtime = np.reshape(runtree.LEtime, (nFEB, constants.nChannel)) #LEtime[4][64]/F
-            self.recoStartBin = np.reshape(runtree.recoStartBin, (nFEB, constants.nChannel)) #recoStartBin[4][64]/I
-            self.recoEndBin = np.recoEndBin(runtree.adc, (nFEB, constants.nChannel)) #recoEndBin[4][64]/I
+            self.PEs = np.reshape(runtree.PEs, (nFEB, geometry_constants.nChannelPerFEB)) #PEs[4][64]/F
+            self.PEsTemperatureCorrected = np.reshape(runtree.PEsTemperatureCorrected, (nFEB, geometry_constants.nChannelPerFEB)) #PEsTemperatureCorrected[4][64]/F
+            self.pulseHeight = np.reshape(runtree.pulseHeight, (nFEB, geometry_constants.nChannelPerFEB)) #pulseHeight[4][64]/F
+            self.beta = np.reshape(runtree.beta, (nFEB, geometry_constants.nChannelPerFEB)) #beta[4][64]/F
+            self.time = np.reshape(runtree.time, (nFEB, geometry_constants.nChannelPerFEB)) #time[4][64]/F
+            self.LEtime = np.reshape(runtree.LEtime, (nFEB, geometry_constants.nChannelPerFEB)) #LEtime[4][64]/F
+            self.recoStartBin = np.reshape(runtree.recoStartBin, (nFEB, geometry_constants.nChannelPerFEB)) #recoStartBin[4][64]/I
+            self.recoEndBin = np.reshape(runtree.recoEndBin, (nFEB, geometry_constants.nChannelPerFEB)) #recoEndBin[4][64]/I
         if (detailLevel & 0b0010):
-            self.PEsReflectedPulse = np.reshape(runtree.PEsReflectedPulse, (nFEB, constants.nChannel)) #PEsReflectedPulse[4][64]/F
-            self.PEsTemperatureCorrectedReflectedPulse = np.reshape(runtree.PEsTemperatureCorrectedReflectedPulse, (nFEB, constants.nChannel)) #PEsTemperatureCorrectedReflectedPulse[4][64]/F
-            self.pulseHeightReflectedPulse = np.reshape(runtree.pulseHeightReflectedPulse, (nFEB, constants.nChannel)) #pulseHeightReflectedPulse[4][64]/F
-            self.betaReflectedPulse = np.reshape(runtree.betaReflectedPulse, (nFEB, constants.nChannel)) #betaReflectedPulse[4][64]/F
-            self.timeReflectedPulse = np.reshape(runtree.timeReflectedPulse, (nFEB, constants.nChannel)) #timeReflectedPulse[4][64]/F
-            self.LEtimeReflectedPulse = np.reshape(runtree.LEtimeReflectedPulse, (nFEB, constants.nChannel)) #LEtimeReflectedPulse[4][64]/F
-            self.recoStartBinReflectedPulse = np.reshape(runtree.recoStartBinReflectedPulse, (nFEB, constants.nChannel)) #recoStartBinReflectedPulse[4][64]/I
-            self.recoEndBinReflectedPulse = np.recoEndBin(runtree.recoEndBinReflectedPulse, (nFEB, constants.nChannel)) #recoEndBinReflectedPulse[4][64]/I
+            self.PEsReflectedPulse = np.reshape(runtree.PEsReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #PEsReflectedPulse[4][64]/F
+            self.PEsTemperatureCorrectedReflectedPulse = np.reshape(runtree.PEsTemperatureCorrectedReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #PEsTemperatureCorrectedReflectedPulse[4][64]/F
+            self.pulseHeightReflectedPulse = np.reshape(runtree.pulseHeightReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #pulseHeightReflectedPulse[4][64]/F
+            self.betaReflectedPulse = np.reshape(runtree.betaReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #betaReflectedPulse[4][64]/F
+            self.timeReflectedPulse = np.reshape(runtree.timeReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #timeReflectedPulse[4][64]/F
+            self.LEtimeReflectedPulse = np.reshape(runtree.LEtimeReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #LEtimeReflectedPulse[4][64]/F
+            self.recoStartBinReflectedPulse = np.reshape(runtree.recoStartBinReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #recoStartBinReflectedPulse[4][64]/I
+            self.recoEndBinReflectedPulse = np.reshape(runtree.recoEndBinReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #recoEndBinReflectedPulse[4][64]/I
     
     #FIXME: 
     # def linkCRVSpill(spilltree, ):
@@ -113,17 +113,19 @@ class crv_event:
     def geomAttributeFill(self, benchGeometryList, attribute):
         tAttribute = None
         exec("tAttribute = self."+attribute)
-        if not tAttribute:
+        if tAttribute is None:
             sys.exit("ERROR: CRV_event: %s is not loaded"%(attribute))
         geomAttribute = []
         for iGeometry in benchGeometryList:
-            tGeomAttribute = iGeometry.mappingFEBCh.copy()
-            with np.nditer(tGeomAttribute, op_flags=['readwrite']) as handle:
-                for x in handle:                    
-                    if int(x.real) < 0:
-                        x[...] = 0
+            tGeomAttribute = np.zeros_like(iGeometry.mappingFEBCh, dtype=float)
+            with np.nditer(iGeometry.mappingFEBCh, flags=['multi_index']) as it:
+                for x in it:
+                    tFEB = int(x.real)
+                    tCh = int(x.imag)
+                    if tFEB < 0:
+                        pass
                     else:
-                        x[...] = tAttribute[int(x.real)][int(x.imag)]
+                        tGeomAttribute[it.multi_index] = tAttribute[tFEB][tCh]
             geomAttribute.append(tGeomAttribute)
         return geomAttribute
 
@@ -148,23 +150,23 @@ class crv_event:
         return # list of triggered layer mask, boolean type 
 
     def plotTrace(self, ax, FEB, Channel, AdditionalTitle): # Channel can be a range or a number 
-        if not self.adc:
+        if self.adc is None:
             sys.exit("ERROR: CRV_event: adc is not loaded")
         strChannel = Channel
         if isinstance(strChannel, int):
             strChannel = "%i:%i"%(strChannel,strChannel+1)
 
-        ax.setTile("FEB %i Ch %s "%(FEB, Channel)+AdditionalTitle)
+        ax.set_title("FEB %i Ch %s "%(FEB, Channel)+AdditionalTitle)
         ax.set_xlabel('ns')
         ax.set_ylabel('ADC counts')
-        x=range(0,constants.sampleRate*np.size(self.adc, 2),constants.sampleRate)
+        x=[constants.sampleRate*i for i in range(np.size(self.adc, 2))]
         label = ""        
         label_list = ["'ch %i', "%(i) for i in range(geometry_constants.nChannelPerFEB)]
         exec("label_list = label_list["+strChannel+"]")
         for iLabel in label_list:
             label += iLabel
         label=label[:-2]
-        exec("ax.legend(ax.plot(x, self.adc[%i"%FEB+","+strChannel+"]), ("+label+"))")
+        exec("ax.legend(ax.plot(x, self.adc[%i"%FEB+","+strChannel+"].T), ["+label+"])")
         ax.get_yaxis().get_major_formatter().set_useOffset(False)
         return
         
@@ -178,47 +180,52 @@ class crv_event:
         if ifPlotTriggeredCounter:
             if "triggeredCounter" not in self.temp_dict.keys():
                 self.triggerCounter(benchGeometryList) # default counterThreshold = 8
-
+        
         canvasSize = benchGeometryList[0].canvasSize
         nX, nY = 0, 0
-        if canvasSize(0)>canvasSize(1):
+        if canvasSize[0]>canvasSize[1]:
             nX = len(benchGeometryList)
             nY = 1
         else:
             nX = 1
             nY = len(benchGeometryList)
-        fig, axes = plt.subplots(nX,nY,figsize=(nY*canvasSize(0), nX*canvasSize(1)))
+        fig, axes = plt.subplots(nX,nY,figsize=(nY*canvasSize[0], nX*canvasSize[1]))
         if nX*nY == 1:
             axes = [axes]
+        
         for index, iGeometry in enumerate(benchGeometryList):
             iGeometry.plotGeometry(axes[index], 'Event #%i'%self.iEntry, False, True)
-            plotArea = (np.ma.masked_where((~iGeometry.idleMask)&(~iGeometry.badChMask), self.temp_dict["geomPECorrected"][index])).flatten()
+            plotArea = (np.ma.masked_where((iGeometry.idleMask|iGeometry.badChMask), self.temp_dict["geomPECorrected"][index])).flatten()
             plotColor = self.temp_dict["geomLEtime"][index].flatten()
             scatTriggeredCh = axes[index].scatter(iGeometry.coordinates["channelX"].flatten(), 
                                                   iGeometry.coordinates["channelY"].flatten(),
-                                                  s=plotArea, marker='o', c=plotColor, cmap='inferno',
+                                                  s=plotArea*0.5, marker='o', c=plotColor, 
+                                                  #cmap='viridis', 
+                                                  cmap='inferno', 
                                                   vmin = 0., vmax = constants.sampleRate*self.nSample,
                                                   zorder = 10)
             axes[index].legend([scatTriggeredCh],['PECorrected'])
-            cbar = axes[index].colorbar()
-            cbar.ax.get_yaxis().set_ticks([])
+            cbar = plt.colorbar(scatTriggeredCh)
+            #cbar.ax.get_yaxis().set_ticks([])
             cbar.ax.get_yaxis().labelpad = 15
             cbar.ax.set_ylabel('time [ns]', rotation=270)
             if ifPlotTriggeredCounter:
                 linesCoord_triggered = iGeometry.plotCntrCoordGen(self.temp_dict["triggeredCounter"][index])
-                lc_triggered = mc.LineCollection(linesCoord_triggered, linewidths=2.5, linestyles='solid', 
-                                                 colors='#9F353A',alpha=0.8)
-                axes[index].add_collection(lc_triggered)
+                if linesCoord_triggered:
+                    lc_triggered = mc.LineCollection(linesCoord_triggered, linewidths=1.5, linestyles='solid', 
+                                                     colors='#113285',alpha=1.,zorder=6)
+                    axes[index].add_collection(lc_triggered)
         pdfpages.savefig(fig)
         plt.close(fig)
-
+        
         #FIXME: add straight line fitting for tracks
 
         if ifPlotTrace:
             for iFEB in range(self.nFEB):
-                fig, axes = plt.subplots(8, 8, figsize=(8*4, 8*3))
+                fig, axes = plt.subplots(8, 8, figsize=(8*6, 8*4))
                 for iCh in range(geometry_constants.nChannelPerFEB):
                     self.plotTrace(axes[int(iCh/8), iCh%8], iFEB, iCh, '')
+                plt.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.01)
                 pdfpages.savefig(fig)
                 plt.close(fig)
                     
