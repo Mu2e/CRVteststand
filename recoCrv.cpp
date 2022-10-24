@@ -334,7 +334,7 @@ class CrvEvent
   int    *_adc;
   float  *_temperature;
   int    *_boardStatus;
-  time_t  _timestamp;  //=long
+  Long64_t  _timestamp;  //time_t
 
   int    *_fitStatus;
   float  *_PEs;
@@ -429,7 +429,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("spillIndex", &_spillIndex, "spillIndex/I");
   recoTree->Branch("spillNumber", &_spillNumber, "spillNumber/I");
   recoTree->Branch("boardStatus", _boardStatus, Form("boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
-  recoTree->Branch("spillTimestamp", &_timestamp);
+  recoTree->Branch("spillTimestamp", &_timestamp, "spillTimestamp/L");
   recoTree->Branch("eventNumber", &_eventNumber, "eventNumber/I");
   recoTree->Branch("tdcSinceSpill", _tdcSinceSpill, Form("tdcSinceSpill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("timeSinceSpill", _timeSinceSpill, Form("timeSinceSpill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
@@ -681,11 +681,11 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals)
 }
 
 void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
-                    float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples, time_t &timestamp)
+                    float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples, Long64_t &timestamp) //time_t
 {
   if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
 
-  time_t timestampTmp;
+  Long64_t  timestampTmp;  //time_t
   int   nEventsExpected;
   int   nEventsActual;
   bool  spillStored;
@@ -698,7 +698,8 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 
   treeSpills->GetEntry(0);
   timestamp=timestampTmp;  //to get the time stamp of the first spill, that gets overwritten at the next GetEntry calls
-  txtFile<<"timestamp: "<<ctime(&timestamp);
+  long timestampL=timestamp;  //long required below
+  txtFile<<"timestamp: "<<ctime(&timestampL);
 
   int nEventsExpectedTotal=0;   //of the spills that were stored
   int nEventsActualTotal=0;
@@ -821,7 +822,7 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
 
   int   run=0;
   int   subrun=0;
-  time_t timestamp;  //=long
+  Long64_t  timestamp; //time_t
   int   *febID = new int[numberOfFebs];
   int    nSpillsActual;
   int   *nFebSpillsActual = new int[numberOfFebs];
@@ -843,7 +844,7 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   TTree *recoTreeSummary = new TTree("runSummary","runSummary");
   recoTreeSummary->Branch("runNumber", &run, "runNumber/I");
   recoTreeSummary->Branch("subrunNumber", &subrun, "subrunNumber/I");
-  recoTreeSummary->Branch("timestamp", &timestamp);
+  recoTreeSummary->Branch("timestamp", &timestamp, "timestamp/L");
   recoTreeSummary->Branch("febID", febID, Form("febID[%i]/I",numberOfFebs));
   recoTreeSummary->Branch("spillsRecorded", &nSpillsActual, "spillsRecorded/I");
   recoTreeSummary->Branch("eventsRecorded", &nEventsActual, "eventsRecorded/I");
