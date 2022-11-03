@@ -18,6 +18,7 @@ pdfpages = PdfPages("test.pdf")
 geometry1 = geometry.testBenchGeometry(geometry_constants.geom_dict_crvaging001)
 geometry4 = geometry.testBenchGeometry(geometry_constants.geom_dict_crvaging004)
 geometry6 = geometry.testBenchGeometry(geometry_constants.geom_dict_crvaging006)
+geometry7 = geometry.testBenchGeometry(geometry_constants.geom_dict_crvaging007)
 
 fig,ax = plt.subplots(1,1,figsize=geometry1.canvasSize)
 geometry1.plotGeometry(ax, '', True, True)
@@ -31,6 +32,11 @@ plt.close(fig)
 
 fig,ax = plt.subplots(1,1,figsize=geometry6.canvasSize)
 geometry6.plotGeometry(ax, '', True, True)
+pdfpages.savefig(fig)
+plt.close(fig)
+
+fig,ax = plt.subplots(1,1,figsize=geometry7.canvasSize)
+geometry7.plotGeometry(ax, '', True, True)
 pdfpages.savefig(fig)
 plt.close(fig)
 
