@@ -99,7 +99,7 @@ EventTree::EventTree(const std::string &runNumber, const std::string &inFileName
   }
 
   //find number of FEBs in file
-  std::cout<<"Determining the number of FEBs."<<std::endl;
+  std::cout<<"Determining the number of FEBs. This may take a while."<<std::endl;
   std::string line;
   std::string searchString="--** SOURCE = FEB";
   std::set<int> febs;
@@ -571,11 +571,18 @@ void EventTree::FillSpill()
     Event &theEvent = event->second;
     for(int feb=0; feb<_numberOfFebs; feb++)
     {
+      bool missingChannel=false;
       for(int channel=0; channel<_channelsPerFeb; channel++)
       {
-        if(theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel))==theEvent._tdcSinceSpill.end()) {theEvent._badEvent=true; ++eventsWithMissingChannels; break;}
+        if(theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel))==theEvent._tdcSinceSpill.end()) 
+        {
+          theEvent._badEvent=true; 
+          ++eventsWithMissingChannels;
+          missingChannel=true;
+          break;  //to avoid double counting this event
+        }
       }
-      if(theEvent._badEvent==true) break;
+      if(missingChannel) break;  //to avoid double counting this event
     }
   }
   if(eventsWithMissingChannels>0)
