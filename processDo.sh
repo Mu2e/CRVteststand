@@ -71,7 +71,11 @@ calibCrv $runAndSubrun
 date
 echo "===================================================="
 echo "Reconstructing run/subrub $runAndSubrun"
-recoCrv $runAndSubrun
+if [ $GAUSSIAN -eq 0 ]; then
+  recoCrv $runAndSubrun
+else
+  recoCrv $runAndSubrun -g
+fi
 date
 echo "===================================================="
 
