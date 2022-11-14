@@ -92,10 +92,16 @@ def plot_ts(*args, **kwargs): # inheritance from g-2 field analysis code
     plt.pyplot.gca().xaxis.set_major_formatter(formatter)
     return ax
 
+def smoothing(x, y, nSmooth): # running average using nSmooth points
+    x_smoothed = x[(nSmooth-1):]
+    y_smoothed = np.array([np.mean(y[i:(i+nSmooth)]) for i in range(len(x_smoothed))])
+    return x_smoothed, y_smoothed
+
 def plot_dqm(plot_dict, nFEBFile, isRaw = False): 
     
     # plot_dict is a dictionary of {keyword:attribute[slicing]}
-    
+    # FIXME: Smoothing??? filter???
+
     tslist = []
     attribute_full_list = []
 
