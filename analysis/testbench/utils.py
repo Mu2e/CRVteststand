@@ -12,7 +12,7 @@ import gc
 from copy import deepcopy
 import numpy as np
 import ROOT
-from ROOT import TCanvas, TH1F, TH2F, TF1, TMath, TGraph
+from ROOT import TFile, TCanvas, TH1F, TH2F, TF1, TMath, TGraph
 from ROOT import gStyle, gROOT, gDirectory
 from array import array
 import matplotlib.pyplot as plt
@@ -21,7 +21,11 @@ from matplotlib.lines import Line2D
 import math
 import argparse, textwrap
 import constants
+import crv_event, crv_spill
 
+##################################  GLOBAL CONTAINER   ######################################
+
+lastTsEpoch = None
 
 ################################## UTILS FOR ROOT TREE ######################################
 
@@ -33,7 +37,7 @@ def type_convert_array_ROOT(arraytype):
     if arraytype in convert_dict:
         return convert_dict[arraytype]
     else:
-        print ("WARNING: array type ",arraytype," not allowed in array.array; changed to 64-bit floating point.")
+        print ("WARNING: utils.type_convert_array_ROOT: array type ",arraytype," not allowed in array.array; changed to 64-bit floating point.")
         return "D"
 
 # input branchlist is a list of 2-tuples. Each 2-tuple contains branch name and data type.
@@ -65,3 +69,51 @@ def treeInitialization(tree, branchlist, exportBranches = False):
         return ROOT_entry_dict, branches
     else:
         return ROOT_entry_dict
+
+################################## UTILS FOR TIME PLOT ######################################
+
+def ts2datetime(ts): # inheritance from g-2 field analysis code
+    try:
+        if len(ts) == 0:
+             return ts
+    except:
+        pass
+    return np.vectorize(datetime.fromtimestamp)(ts)
+
+def plot_ts(*args, **kwargs): # inheritance from g-2 field analysis code
+    from matplotlib.dates import DateFormatter
+    if 'dformat' in kwargs:
+        dformat = kwargs['dformat']
+        del kwargs['dformat']
+    else:
+        dformat = '%m/%d\n%H:%M'
+    formatter = DateFormatter(dformat)
+    ax = plt.pyplot.plot_date(ts2datetime(args[0]), *args[1:], **kwargs)
+    plt.pyplot.gca().xaxis.set_major_formatter(formatter)
+    return ax
+
+def plot_dqm(plot_dict, nFEBFile, isRaw = False): 
+    
+    # plot_dict is a dictionary of {keyword:attribute[slicing]}
+    
+    tslist = []
+    attribute_full_list = []
+
+    attribute_list = [[] for i in range(len(attribute_list))]
+    for filename in filename_list:
+        fFile = TFile(filename, "READ")
+        runtree = fFile.Get("run")
+        spilltree = fFile.Get("spills")
+        iEvent = 0
+        nEvent = runtree.GetEntries()
+        nSpill = spilltree.GetEntries()
+        for iSpill in range(nSpill):
+            tSpill = crv_spill.crv_spill(spilltree, iSpill, isRaw)
+            tSpill.getTempCMB(runtree, nFEBFile, iEvent, True)
+            iEvent += tSpill.nEventsActual
+            if iEvent > nEvent:
+                sys.exit("Error: utils.plot_dqm: %s nEvent = %i, Spill # %i is reading iEvent = %i"%(filename, nEvent, iSpill, iEvent))
+        fFile.Close()
+
+    
+    #FIXME: Add display for removed spills

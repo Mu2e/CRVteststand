@@ -112,7 +112,7 @@ geom_dict_crvaging007 = {
     'moduleOffsetX' : [0., 0., 0., 0.],
     'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(4)],
     'FEB'           : [[1,0], [-1,2], [3,-1], [4,5]],
-    'badChannels'   : [(2, 4),(2, 5),(2, 6),(2, 7),(3, 0),(3, 1),(3, 2),(3, 3)], 
+    'badChannels'   : [], # [(2, 4),(2, 5),(2, 6),(2, 7),(3, 0),(3, 1),(3, 2),(3, 3)], 
     'triggerOnlyChs': [(2, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)] + 
                       [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)],
                       # 2-tuple list if channels are designated in the triggering layers 

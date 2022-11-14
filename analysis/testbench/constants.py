@@ -5,3 +5,6 @@ file_calib_location = data_location + "crvcalib/"
 file_reco_location = data_location + "crvreco/"
 
 sampleRate = 12.55 #ns
+
+tDataTaking = 120 #s
+tDataTransfer = 60 #s

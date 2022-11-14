@@ -72,10 +72,13 @@ class crv_event:
         self.nSample = int(np.size(runtree.runtree_adc if isRaw else runtree.adc)/nFEB/(geometry_constants.nChannelPerFEB))
             
         # start filling in the contents using the trees 
+        # FIXME: v3 also has spillIndex/I (runtree_spill_index/I), 
+        #                    spillTimestamp/G (runtree_spillTimestamp/G), 
+        #                    boardStatus[6][22]/I (runtree_boardStatus[6][22]/I) 
         if (detailLevel & 0b1000):
             self.spillNumber = runtree.runtree_spill_num if isRaw else runtree.spillNumber #runtree_spill_num/I or spillNumber/I
             self.eventNumber = runtree.runtree_event_num if isRaw else runtree.eventNumber #runtree_event_num/I or eventNumber/I
-            self.temperature = np.reshape(runtree.runtree_temperature if isRaw else runtree.temperature, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_tdc_since_spill[4][64]/L or temperature[4][64]/F
+            self.temperature = np.reshape(runtree.runtree_temperature if isRaw else runtree.temperature, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_temperature[4][64]/L or temperature[4][64]/F
             self.pedestal = None if isRaw else np.reshape(runtree.pedestal, (nFEB, geometry_constants.nChannelPerFEB)) #pedestal[4][64]/F
             self.tdcSinceSpill = np.reshape(runtree.runtree_tdc_since_spill if isRaw else runtree.tdcSinceSpill, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_tdc_since_spill[4][64]/L or tdcSinceSpill[4][64]/L
             self.timeSinceSpill = np.reshape(runtree.runtree_time_since_spill if isRaw else runtree.timeSinceSpill, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_time_since_spill[4][64]/D or timeSinceSpill[4][64]/D
