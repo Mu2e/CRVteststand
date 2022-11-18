@@ -97,10 +97,16 @@ def smoothing(x, y, nSmooth): # running average using nSmooth points
     y_smoothed = np.array([np.mean(y[i:(i+nSmooth)]) for i in range(len(x_smoothed))])
     return x_smoothed, y_smoothed
 
-def plot_dqm(plot_dict, nFEBFile, isRaw = False): 
+def plot_dqm(ax, filename_list, plot_dict, dqmFilter, nSmooth, nFEBFile, isRaw = False): 
     
-    # plot_dict is a dictionary of {keyword:attribute[slicing]}
+    # plot_dict is a dictionary of {"keyword":"attribute[slicing]"}
+    # if an attribute has more than 1 element and the slicing is not specified, all elements 
+    # of the attribute are independently plotted
+
     # FIXME: Smoothing??? filter???
+
+
+
 
     tslist = []
     attribute_full_list = []
