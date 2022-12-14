@@ -44,7 +44,7 @@ class crv_spill:
                          "busSiPMBias", "TrigCtrlReg", "settingPipelineLen", "settingSampleLen",
                          "tsEpoch",
                          # operation containers
-                         "temperatureCMB",
+                         "temperatureCMB", # getTempCMB provides array of [nFEB][nChannelPerFEB]
                          "dqmRedFlag"
                          ]
         for item in attributeList:
@@ -178,4 +178,6 @@ class crv_spill:
                 if self.busSiPMBias[i][j] < 50:
                     self.dqmRedFlag |= (0b1 << (8+i*8+j))
         return
+
+        # FIXME: temperature DQM???
             

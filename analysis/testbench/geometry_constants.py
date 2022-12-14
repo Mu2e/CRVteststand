@@ -33,6 +33,8 @@ moduleThickness          = strongBackThickness + scintillatorBarThickness*4 + su
 dicounterPerLayer = 8
 nLayer            = 4
 nChannelPerFEB    = 64
+nCMBPerFEB        = 16
+nChannelPerCMB    = 4
 xFiberPosition    = [0., channelToChannel, scintillatorBarWidth + gapSmall, channelToChannel + scintillatorBarWidth + gapSmall]
 
 # ===== MODULE FEB/CH MAP =============================

@@ -97,11 +97,48 @@ def smoothing(x, y, nSmooth): # running average using nSmooth points
     y_smoothed = np.array([np.mean(y[i:(i+nSmooth)]) for i in range(len(x_smoothed))])
     return x_smoothed, y_smoothed
 
-def plot_dqm(ax, filename_list, plot_dict, dqmFilter, nSmooth, nFEBFile, isRaw = False): 
+def plot_dqm(filename_list, plot_dict, dqmFilter, nFEBFile, nSmooth = 1, show = False, isRaw = False): 
     
-    # plot_dict is a dictionary of {"keyword":"attribute[slicing]"}
+    # plot_dict is a dictionary of {"keyword":["attribute[slicing]"]}; no omission is allowed if slicing is used
+    # keyword is the selection criteria in the file name; if keyword is not an attribute name, 
+    # it would be calculated and searched for in crv_spill.temp_dict.
+    #
     # if an attribute has more than 1 element and the slicing is not specified, all elements 
     # of the attribute are independently plotted
+    
+    allowed_non_attribute = []
+
+    plotted_attribute = []
+    full_plot_dict = {}
+    for k in plot_dict.keys():
+        full_plot_dict.update({k:[]})
+
+    for k,vl in plot_dict.iteritems():
+        for v in vl:
+            tAttribute = v.split('[')[0] if '[' in v else v
+            if tAttribute not in plotted_attribute:
+                plotted_attribute.append(tAttribute)
+            nColon = v.count(':')
+            if nColon == 0:
+                full_plot_dict[k].append(v)
+            else:
+                tNameStem = '['.join(v.split('[')[:-1])
+                tSlicingIndex = v.split('[')[-1].split(']')[0].split(':')
+                tStart = int(tSlicingIndex[0])
+                tEnd = int(tSlicingIndex[1])
+                tSkip = 1
+                if nColon > 1:
+                    tSkip = int(tSlicingIndex[2])
+                for i in range(tStart, tEnd, tSkip):
+                    full_plot_dict[k].append(tNameStem+'[%i]'%(i))
+
+    for 
+                   
+
+    for 
+    
+
+
 
     # FIXME: Smoothing??? filter???
 
@@ -121,10 +158,11 @@ def plot_dqm(ax, filename_list, plot_dict, dqmFilter, nSmooth, nFEBFile, isRaw =
         nSpill = spilltree.GetEntries()
         for iSpill in range(nSpill):
             tSpill = crv_spill.crv_spill(spilltree, iSpill, isRaw)
-            tSpill.getTempCMB(runtree, nFEBFile, iEvent, True)
-            iEvent += tSpill.nEventsActual
-            if iEvent > nEvent:
-                sys.exit("Error: utils.plot_dqm: %s nEvent = %i, Spill # %i is reading iEvent = %i"%(filename, nEvent, iSpill, iEvent))
+            if 
+                tSpill.getTempCMB(runtree, nFEBFile, iEvent, True)
+                iEvent += tSpill.nEventsActual
+                if iEvent > nEvent:
+                    sys.exit("Error: utils.plot_dqm: %s nEvent = %i, Spill # %i is reading iEvent = %i"%(filename, nEvent, iSpill, iEvent))
         fFile.Close()
 
     
