@@ -679,7 +679,11 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals)
     fwhm = rightX-leftX;
     signals = h.Integral(15,150);
 }
-void Gauss(TH1F &h, float &mpv, float &fwhm, float &signals)
+double PoissonFunction(double *x, double *par)
+{
+    return par[0]*TMath::Poisson(x[0],par[1]);
+}
+void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals)
 {
     float maxX=0;
     float maxValue=0;
@@ -694,14 +698,15 @@ void Gauss(TH1F &h, float &mpv, float &fwhm, float &signals)
     Double_t fitRangeEnd  =1.4*maxX;
     if(fitRangeStart<20.0) fitRangeStart=20.0;
 
-    TF1 fit("Gauss","gaus(0)",fitRangeStart,fitRangeEnd);
+    TF1 fit("Poisson",PoissonFunction,fitRangeStart,fitRangeEnd,2);
+    fit.SetParameter(0,maxValue);
     fit.SetParameter(1,maxX);
     fit.SetLineColor(kRed);
-    fit.SetParNames("Width","MP","Area","GSigma");
+    fit.SetParNames("Const","mean");
     h.Fit(&fit,"QR");
     fit.Draw("same");
 
-    mpv = fit.GetParameter(1);
+    mpv = fit.GetMaximumX();
     float halfMaximum = fit.Eval(mpv)/2.0;
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
@@ -1164,7 +1169,7 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
   std::cout<<"Mean far side    "<<std::setw(8)<<meanFar[0]<<"  "<<std::setw(8)<<meanFar[1]<<std::endl;
 }
 
-void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &pdfFileName, const std::string &txtFileName, bool gaussian)
+void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -1222,8 +1227,8 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         float mpv=0;
         float fwhm=0;
         float nsignals=0;
-        if(!gaussian) LandauGauss(*h[i], mpv, fwhm, nsignals);
-        else Gauss(*h[i], mpv, fwhm, nsignals);
+        if(!usePoisson) LandauGauss(*h[i], mpv, fwhm, nsignals);
+        else Poisson(*h[i], mpv, fwhm, nsignals);
         mpvs[i].push_back(mpv);
         fwhms[i].push_back(fwhm);
         signals[i].push_back(nsignals);
@@ -1339,7 +1344,7 @@ void printHelp()
   std::cout<<"Use as"<<std::endl;
   std::cout<<"recoCrv -h             Prints this help."<<std::endl;
   std::cout<<"recoCrv RUNNUMBER [-g] Reconstructs a run."<<std::endl;
-  std::cout<<"-g                     Uses Gaussian fit for the PE yield distribution, instead of a convoluted Gauss-Landau fit."<<std::endl;
+  std::cout<<"-p                     Uses Poisson fit for the PE yield distribution, instead of a convoluted Gauss-Landau fit."<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -1356,10 +1361,10 @@ int main(int argc, char **argv)
   gStyle->SetOptFit(0);
 
   std::string runNumber=argv[1];
-  bool gaussian=false;
+  bool usePoisson=false;
   if(argc==3)
   {
-    if(strcmp(argv[2],"-g")==0) gaussian=true;
+    if(strcmp(argv[2],"-p")==0) usePoisson=true;
   }
   std::string inFileName;
   std::string calibFileName;
@@ -1368,7 +1373,7 @@ int main(int argc, char **argv)
   std::string txtFileName;
   makeFileNames(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName);
 
-  process(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName, gaussian);
+  process(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName, usePoisson);
 
 //#pragma message "USING WRONG CALIB CONSTANTS"
 //std::cout<<"USING WRONG CALIB CONSTANTS"<<std::endl;
