@@ -137,7 +137,6 @@ void EventTree::Clear()
   _nEventsActual=0;
   for(int i=0; i<_numberOfFebs*BOARD_STATUS_REGISTERS; i++)
   {
-
     _boardStatus[i]=-1;
   }
   for(int i=0; i<_numberOfFebs*_channelsPerFeb; i++)
@@ -564,38 +563,47 @@ void EventTree::FillSpill()
   }
 
   //check whether all channels are present
-  size_t eventsWithMissingChannels=0;
+  size_t eventsWithMissingChannels[_numberOfFebs]={};
   std::map<int,Event>::iterator event;
   for(event=_spill.begin(); event!=_spill.end(); event++)
   {
     Event &theEvent = event->second;
     for(int feb=0; feb<_numberOfFebs; feb++)
     {
-      bool missingChannel=false;
       for(int channel=0; channel<_channelsPerFeb; channel++)
       {
         if(theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel))==theEvent._tdcSinceSpill.end()) 
         {
           theEvent._badEvent=true; 
-          ++eventsWithMissingChannels;
-          missingChannel=true;
+          ++eventsWithMissingChannels[feb];
           break;  //to avoid double counting this event
         }
       }
-      if(missingChannel) break;  //to avoid double counting this event
     }
   }
-  if(eventsWithMissingChannels>0)
+
+  for(int feb=0; feb<_numberOfFebs; feb++)
   {
-    if(eventsWithMissingChannels>=_spill.size())
+    if(eventsWithMissingChannels[feb]>=_spill.size())
     {
-      std::cout<<"All events of spill "<<_spillNumber<<" have missing channels."<<std::endl;
-      std::cout<<"Events of this spill are not stored, but spill information gets added to spill tree."<<std::endl;
+      std::cout<<"All events of spill "<<_spillNumber<<" have missing channels at FEB "<<feb<<"."<<std::endl;
+      _boardStatus[feb*BOARD_STATUS_REGISTERS]=-1;  //this marks the FEB as bad for this spill
       _spillStored=false;
-      _treeSpills->Fill();
-      return;
     }
-    std::cout<<eventsWithMissingChannels<<" events have missing channels. These events are not stored."<<std::endl;
+  }
+  if(!_spillStored)
+  {
+    _treeSpills->Fill();
+    std::cout<<"This spill will not be stored, but spill information gets added to spill tree."<<std::endl;
+    return;
+  }
+
+  for(int feb=0; feb<_numberOfFebs; feb++)
+  {
+    if(eventsWithMissingChannels[feb]>0)
+    {
+      std::cout<<eventsWithMissingChannels<<" events have missing channels at FEB "<<feb<<". These events are not stored."<<std::endl;
+    }
   }
 
   for(event=_spill.begin(); event!=_spill.end(); event++)
