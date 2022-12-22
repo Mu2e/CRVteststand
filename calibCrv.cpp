@@ -66,7 +66,7 @@ class CrvEvent
   int     _eventNumber;
   int    *_tdcSinceSpill;
   double *_timeSinceSpill;
-  int    *_adc;
+  short  *_adc;
   float  *_temperature;
 
   std::vector<TCanvas*> _canvas;
@@ -114,7 +114,7 @@ CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int n
   if(_calibTemperatureIntercept==-1.0) {std::cerr<<"calibTemperatureIntercept missing in config.txt"<<std::endl; exit(1);}
 
   _lastSpillIndex = new int[_numberOfFebs*_channelsPerFeb];
-  _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
+  _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
 //  _timeSinceSpill = new double[_numberOfFebs];  //OLD
   _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
@@ -192,7 +192,7 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
       if(isnan(_timeSinceSpill[index])) continue;  //missing FEB/channel in raw data
 
-      const int *data = &(_adc[index*_numberOfSamples]);
+      const short *data = &(_adc[index*_numberOfSamples]);
 
       if(data[0]==0 && data[1]==0 && data[3]==0) continue; //FIXME temporary check for bad events
                                                            //where other channels work, so that timSinceSpill wasn't marked as NAN
@@ -207,7 +207,7 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
         double maxADC=NAN;
         for(int j=0; j<_numberOfPreSignalSamples/numberOfRegions; j++)
         {
-          int ADC=data[i*_numberOfPreSignalSamples/numberOfRegions+j];
+          short ADC=data[i*_numberOfPreSignalSamples/numberOfRegions+j];
           average+=ADC;
           if(ADC<minADC || isnan(minADC)) minADC=ADC;
           if(ADC>maxADC || isnan(maxADC)) maxADC=ADC;
@@ -271,7 +271,7 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
       if(isnan(_timeSinceSpill[index])) continue;  //missing FEB/channel in raw data
 
-      const int *data = &(_adc[index*_numberOfSamples]);
+      const short *data = &(_adc[index*_numberOfSamples]);
 
       if(data[0]==0 && data[1]==0 && data[3]==0) continue; //FIXME temporary check for bad events
                                                            //where other channels work, so that timSinceSpill wasn't marked as NAN

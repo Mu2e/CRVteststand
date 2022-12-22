@@ -117,7 +117,7 @@ class CrvRecoEvent
   CrvRecoEvent(int signalRegionStart, int signalRegionEnd) : _f("peakfitter","[0]*(TMath::Exp(-(x-[1])/[2]-TMath::Exp(-(x-[1])/[2])))"), _signalRegionStart(signalRegionStart), _signalRegionEnd(signalRegionEnd) {Init();} 
   void Init();
   bool FailedFit(TFitResultPtr fr);
-  void PeakFitter(const int* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw);
+  void PeakFitter(const short* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw);
 
   TF1    _f;
   int    _signalRegionStart;
@@ -154,7 +154,7 @@ bool CrvRecoEvent::FailedFit(TFitResultPtr fr)
   }
   return false;
 }
-void CrvRecoEvent::PeakFitter(const int* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw)
+void CrvRecoEvent::PeakFitter(const short* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw)
 {
   if(std::isnan(calibrationFactor) || calibrationFactor==0) return;
 
@@ -331,7 +331,7 @@ class CrvEvent
   //int    *_tdcSinceSpill;  //OLD
   Long64_t *_tdcSinceSpill;
   double *_timeSinceSpill;
-  int    *_adc;
+  short  *_adc;
   float  *_temperature;
   int    *_boardStatus;
   Long64_t  _timestamp;  //time_t
@@ -391,7 +391,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
 //  _timeSinceSpill = new double[_numberOfFebs];  //OLD
   _tdcSinceSpill  = new Long64_t[_numberOfFebs*_channelsPerFeb];
   _timeSinceSpill = new double[_numberOfFebs*channelsPerFeb];
-  _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
+  _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
   _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
 
@@ -441,7 +441,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("beta", _beta, Form("beta[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("time", _time, Form("time[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("LEtime", _LEtime, Form("LEtime[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
-  recoTree->Branch("adc", _adc, Form("adc[%i][%i][%i]/I",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
+  recoTree->Branch("adc", _adc, Form("adc[%i][%i][%i]/S",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
   recoTree->Branch("recoStartBin", _recoStartBin, Form("recoStartBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoEndBin", _recoEndBin, Form("recoEndBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("pedestal", _pedestal, Form("pedestal[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
@@ -858,6 +858,7 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   int   subrun=0;
   Long64_t  timestamp; //time_t
   int   *febID = new int[numberOfFebs];
+  int    nSpillsTotal=treeSpills->GetEntries();
   int    nSpillsActual;
   int   *nFebSpillsActual = new int[numberOfFebs];
   float *febTemperaturesAvg = new float[numberOfFebs];
@@ -880,6 +881,7 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   recoTreeSummary->Branch("subrunNumber", &subrun, "subrunNumber/I");
   recoTreeSummary->Branch("timestamp", &timestamp, "timestamp/L");
   recoTreeSummary->Branch("febID", febID, Form("febID[%i]/I",numberOfFebs));
+  recoTreeSummary->Branch("spillsTotal", &nSpillsTotal, "spillsTotal/I");
   recoTreeSummary->Branch("spillsRecorded", &nSpillsActual, "spillsRecorded/I");
   recoTreeSummary->Branch("eventsRecorded", &nEventsActual, "eventsRecorded/I");
   recoTreeSummary->Branch("febSpills", nFebSpillsActual, Form("febSpills[%i]/I",numberOfFebs));

@@ -17,10 +17,10 @@ const int BOARD_STATUS_REGISTERS=22;
 
 struct Event
 {
-  bool                                            _badEvent;
-  std::map<std::pair<int,int> ,long>              _tdcSinceSpill;  //TDC for every FEB/channel pair
-  std::map<std::pair<int,int>, std::vector<int> > _adc;            //ADC samples for every FEB/channel pair
-  std::map<std::pair<int,int>, float>             _temperature;    //CMB temperature
+  bool                                              _badEvent;
+  std::map<std::pair<int,int> ,long>                _tdcSinceSpill;  //TDC for every FEB/channel pair
+  std::map<std::pair<int,int>, std::vector<short> > _adc;            //ADC samples for every FEB/channel pair
+  std::map<std::pair<int,int>, float>               _temperature;    //CMB temperature
 
   Event() : _badEvent(false) {}
 };
@@ -58,6 +58,8 @@ class EventTree
   int    _channelsPerFeb;
   int    _numberOfSamples;
   size_t _nEvents;  //from spill header
+  int    _run;
+  int    _subrun;
   int    _spillIndex; //increased for every spill
   int    _spillNumber; //from FEB spill header
   int    _eventNumber;
@@ -69,7 +71,7 @@ class EventTree
 
   long   *_tdcSinceSpill;
   double *_timeSinceSpill;
-  int    *_adc;
+  short  *_adc;
   float  *_temperature;
 
   EventTree();
@@ -123,8 +125,16 @@ EventTree::EventTree(const std::string &runNumber, const std::string &inFileName
   _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
   _tdcSinceSpill  = new long[_numberOfFebs*_channelsPerFeb];
   _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
-  _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
+  _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
+
+  size_t underscorePos = runNumber.rfind('_');
+  if(underscorePos==std::string::npos) _run=atoi(runNumber.c_str());
+  else
+  {
+    _run=atoi(runNumber.substr(0,underscorePos).c_str());
+    if(underscorePos+1<runNumber.size()) _subrun=atoi(runNumber.substr(underscorePos+1).c_str());
+  }
 
   Clear();
   PrepareTree();
@@ -164,11 +174,13 @@ void EventTree::PrepareTree()
   _tree->Branch("runtree_event_num", &_eventNumber, "runtree_event_num/I");
   _tree->Branch("runtree_tdc_since_spill", _tdcSinceSpill, Form("runtree_tdc_since_spill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_time_since_spill", _timeSinceSpill, Form("runtree_time_since_spill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
-  _tree->Branch("runtree_adc", _adc, Form("runtree_adc[%i][%i][%i]/I",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
+  _tree->Branch("runtree_adc", _adc, Form("runtree_adc[%i][%i][%i]/S",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
   _tree->Branch("runtree_temperature", _temperature, Form("runtree_temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_boardStatus", _boardStatus, Form("runtree_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
   _tree->Branch("runtree_spillTimestamp", &_timestamp,"runtree_spillTimestamp/L");
 
+  _treeSpills->Branch("runNumber", &_run, "runNumber/I");
+  _treeSpills->Branch("subrunNumber", &_subrun, "subrunNumber/I");
   _treeSpills->Branch("spill_index", &_spillIndex, "spill_index/I");
   _treeSpills->Branch("spill_num", &_spillNumber, "spill_num/I");
   _treeSpills->Branch("spill_nevents", &_nEvents, "spill_nevents/I");
@@ -304,10 +316,10 @@ std::cout<<"unknown channel "<<channel<<std::endl;
 if(theEvent._badEvent) std::cout<<"bad Event at FEB "<<feb<<" ch "<<channel<<std::endl;
 
   theEvent._tdcSinceSpill[std::pair<int,int>(feb,channel)]=tdcSinceSpill;  //TDCs may differ between different FPGAs
-  std::vector<int> &adcSamples = theEvent._adc[std::pair<int,int>(feb,channel)];  //get the ADC samples for this FEB/channel pair
+  std::vector<short> &adcSamples = theEvent._adc[std::pair<int,int>(feb,channel)];  //get the ADC samples for this FEB/channel pair
   for(size_t i=1; i<dataSize; i++)
   {
-    int adcSample=buffer.at(i*2+1)+256*buffer.at(i*2);
+    short adcSample=buffer.at(i*2+1)+256*buffer.at(i*2);   //buffer stays within unsigned char for ADC values
     if(adcSample>2048) adcSample-=4096;
     adcSamples.push_back(adcSample);
 //std::cout<<"ADCsample "<<i<<"  "<<adcSample<<std::endl;
@@ -633,7 +645,7 @@ void EventTree::FillSpill()
           continue;   //no need to fill ADCs below; they are set to zero in the constructor
         }
 
-        std::map<std::pair<int,int>, std::vector<int> >::const_iterator iterADC=theEvent._adc.find(std::pair<int,int>(feb,channel));
+        std::map<std::pair<int,int>, std::vector<short> >::const_iterator iterADC=theEvent._adc.find(std::pair<int,int>(feb,channel));
         if(iterADC!=theEvent._adc.end())
         {
           int nSamples=static_cast<int>(iterADC->second.size());
