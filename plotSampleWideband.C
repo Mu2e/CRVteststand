@@ -16,7 +16,7 @@
   TFile *file = TFile::Open(Form("/pnfs/mu2e/scratch/outstage/ehrlich/wideband7/crvparsed/ntd.mu2e.CRV_wideband_cosmics.crvaging-001.%s.root",runNumber.c_str()));
   TTree *tree = (TTree*)file->FindObjectAny("run");
 
-  int adc[NUMBER_OF_FEBS][CHANNEL_PER_FEB][NUMBER_OF_SAMPLES];
+  short adc[NUMBER_OF_FEBS][CHANNEL_PER_FEB][NUMBER_OF_SAMPLES];
   tree->SetBranchAddress("runtree_adc", adc);
 
   for(int eventNumber=eventNumberStart; eventNumber<=eventNumberEnd; eventNumber++)
