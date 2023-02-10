@@ -1,0 +1,76 @@
+crv_split_bin.sh
+---------------------------------------------------------------------
+Command shell for batch processing files to split them into sub-runs.
+
+run as:
+>>  ./crv_split_bin.sh
+
+parameters for adjustment:
+    ID (ln 17) for source directory;
+    OT (ln 20) for location to store the splitted files;
+    SOURCEDIR (ln 23) for location of crv_split(_bin).py;
+    NSPLIT (ln 54, 57) number of spills per sub-run, individually set 
+                       for cosmic and LED runs
+
+=====================================================================
+
+crv_split_bin.py
+---------------------------------------------------------------------
+Program to process a single file and split it into sub-runs. This
+version reads the original file as binaries in chunks and finds
+keywords for beginnings of spills and FEB data blocks and slice 
+accordingly. Normally this program is called by the shell scripts, 
+but it can be manually called if the processing is stopped halfway 
+and one wants to skip a certain number of sub-runs.
+
+run as:
+>>  crv_split_bin.py [file.dat] [file_000.dat] [nev] [nsplit] ([nfskip])
+    [file.dat]: input filename (full path)
+    [file_000.dat]: output filename of the first sub-run. Subsequent 
+                    files will increment the number accordingly.
+    [nev]: total number of spills in the file. Normally supplied by
+           the shell script.
+    [nsplit]: number of spills disired per sub-run. The output may 
+              not be this exact number; remainders would be evenly 
+              distributed over the subruns. e.g., a cosmic run of 
+              2100 spills with nsplit of 1000 will have 1050 spills 
+              in each sub-run, instead of 1000 and 1100.
+    [nfskip]: optional argument specifies the number of output files 
+              to skip at the beginning. e.g., for nfskip = 2, the 
+              output will start with file_002.dat.
+
+parameters for adjustment:
+    IN_BUF_SIZE (ln 5), OUT_BUF_SIZE (ln 6) sizes of input and output
+                        chunks in bytes. Adjust according to the 
+                        available memory space for good performance. 
+                        
+=====================================================================
+
+para_transmit.py
+---------------------------------------------------------------------
+Program that manages file upload to the persistent data storage area
+using rsync. On the DAQ laptop at the Wideband, the rate is limited 
+by the processing power of the CPU during encryption and compression.
+As single rsync process cannot fully utilize the computing power of a
+multi-core computer, this program uses multiprocessing in python to 
+manage parallel processing and transmission of data. The program also
+balances load automatically among multiple GPVM machine gateways.
+
+run as:
+>>  kinit # to set up access to GPVM machines
+>>  para_transmit.py ['file*.dat']
+    ['file*.dat']: files to transmit; when using asterisk for 
+                   specifying multiple files, be sure to use the 
+                   quotation marks ('') to make sure the file name is
+                   not unpacked by the linux shell.
+
+parameters for adjustment:
+    gpvmPool (ln 10): pool of GPVMs to access for transmission. 
+                      Adjust the length of the subsequent array
+                      'gpvmUsgCount' accordingly;
+    userName (ln 13): user name used for kinit access;
+    nMaxProcessPerGpvm (ln 15): maximum number of transmission 
+                                allowed per GPVM machine. Also
+                                limited by the number of CPU cores
+                                on the DAQ computer;
+    destination (ln 16): file transmission destination
