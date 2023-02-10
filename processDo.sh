@@ -64,14 +64,21 @@ echo "Raw file $inputfileRemote"
 echo "===================================================="
 echo "Parsing run/subrub $runAndSubrun"
 parserCrv $runAndSubrun 
+ls -l crvparsed
 date
 echo "===================================================="
 echo "Calibrating run/subrub $runAndSubrun"
 calibCrv $runAndSubrun 
+ls -l crvparsed
 date
 echo "===================================================="
 echo "Reconstructing run/subrub $runAndSubrun"
-recoCrv $runAndSubrun
+if [ $POISSON -eq 0 ]; then
+  recoCrv $runAndSubrun
+else
+  recoCrv $runAndSubrun -p
+fi
+ls -l crvparsed
 date
 echo "===================================================="
 

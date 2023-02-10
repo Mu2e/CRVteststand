@@ -12,12 +12,11 @@
 class CrvCounter : public TWbox
 {
   public:
-  CrvCounter(Int_t side, Int_t feb, Int_t channel1, Int_t channel2, TText *textPEs,  
-             TPad *padAdc, TPad *padReco1, TPad *padReco2,
-             Double_t x1, Double_t y1, Double_t x2, Double_t y2) :
-             TWbox(x1, y1, x2, y2, 0,(feb>=0?3:1),1), 
+  CrvCounter(int side, int feb, int channel1, int channel2, TText *textPEs,  
+             TPad *padAdc, TPad *padReco1, TPad *padReco2, double x, double y) :
+             TWbox(x-25.65, y-9.9, x+25.65, y+9.9, 0,(feb>=0?3:1),1), 
              _side(side), _feb(feb), _channel1(channel1), _channel2(channel2), _PE1(0), _PE2(0),
-             _x((x1+x2)/2.0), _y((y1+y2)/2.0), _textPEs(textPEs), _padAdc(padAdc)
+             _x(x), _y(y), _textPEs(textPEs), _padAdc(padAdc)
   {
     _padReco[0]=padReco1;
     _padReco[1]=padReco2;
@@ -168,7 +167,8 @@ class CrvCounter : public TWbox
   {
     _PE1=PE1; _PE2=PE2;
   }
-  void SetADCs(int adc1[], int adc2[]) 
+//  void SetADCs(int adc1[], int adc2[]) 
+  void SetADCs(short adc1[], short adc2[]) 
   {
     _adc[0].clear();
     _adc[1].clear();
@@ -347,7 +347,8 @@ bool EventWindow::DoEvent()
 
   float   PEs[_numberOfFebs][_channelsPerFeb];
   int     fitStatus[_numberOfFebs][_channelsPerFeb];
-  int     adc[_numberOfFebs][_channelsPerFeb][_numberOfSamples];
+//  int     adc[_numberOfFebs][_channelsPerFeb][_numberOfSamples];
+  short   adc[_numberOfFebs][_channelsPerFeb][_numberOfSamples];
   float   time[_numberOfFebs][_channelsPerFeb];
   float   beta[_numberOfFebs][_channelsPerFeb];
   float   pulseHeight[_numberOfFebs][_channelsPerFeb];
@@ -440,10 +441,15 @@ bool EventWindow::DoEvent()
   }
   if(_fitButton->IsOn() && sumPEs>0 && nPoints>0)
   {
-    if(sumPEs*sumYY-sumY*sumY!=0)
+    float scale=nPoints/sumPEs;
+    sumX *=scale;
+    sumY *=scale;
+    sumXY*=scale;
+    sumYY*=scale;
+    if(nPoints*sumYY-sumY*sumY!=0)
     {
-      float slope=(sumPEs*sumXY-sumX*sumY)/(sumPEs*sumYY-sumY*sumY);
-      float intercept=(sumX-slope*sumY)/sumPEs;
+      float slope=(nPoints*sumXY-sumX*sumY)/(nPoints*sumYY-sumY*sumY);
+      float intercept=(sumX-slope*sumY)/nPoints;
       float x1=intercept+slope*_minY;
       float x2=intercept+slope*_maxY;
       for(int side=0; side<2; ++side)
@@ -542,8 +548,7 @@ void EventWindow::DrawFront(int side)
     int channel2=channelIter->first.second.second;
 
     CrvCounter *box = new CrvCounter(side, feb, channel1, channel2, _textPEs[side], 
-                                     _padsAdc[side], _padsReco1[side], _padsReco2[side], 
-                                     x-25.0, y-10.0, x+25.0, y+10.0);
+                                     _padsAdc[side], _padsReco1[side], _padsReco2[side], x, y);
     box->Draw();
     _boxes[side].push_back(box);
   }

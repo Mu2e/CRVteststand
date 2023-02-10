@@ -3,16 +3,17 @@
 help()
 {
   echo "Usage:"
-  echo "./processSubmit.sh -r listOfRawFiles.txt -e directoryOfExecutablesAndConfig -o outputDirectory"
+  echo "./processSubmit.sh -r listOfRawFiles.txt -e directoryOfExecutablesAndConfig -o outputDirectory [-p]"
 }
 
 rawFiles=""
 execDir=""
 outputDir=""
+poisson=0
 
 OPTIND=1  #needed by getopts
 
-while getopts "r:e:o:h" opt; do
+while getopts "r:e:o:ph" opt; do
   case "$opt" in
     r)
        rawFiles=$OPTARG
@@ -22,6 +23,9 @@ while getopts "r:e:o:h" opt; do
        ;;
     o)
        outputDir=$OPTARG
+       ;;
+    p)
+       poisson=1
        ;;
     h)
        help
@@ -93,6 +97,7 @@ jobsub_submit \
 -e RAWFILES=$rawFiles \
 -e EXECDIR=$execDir \
 -e OUTPUTDIR=$outputDir \
+-e POISSON=$poisson \
 --memory=1GB \
 --disk=100GB \
 --expected-lifetime=4h \

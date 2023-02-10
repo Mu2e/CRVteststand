@@ -117,7 +117,7 @@ class CrvRecoEvent
   CrvRecoEvent(int signalRegionStart, int signalRegionEnd) : _f("peakfitter","[0]*(TMath::Exp(-(x-[1])/[2]-TMath::Exp(-(x-[1])/[2])))"), _signalRegionStart(signalRegionStart), _signalRegionEnd(signalRegionEnd) {Init();} 
   void Init();
   bool FailedFit(TFitResultPtr fr);
-  void PeakFitter(const int* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw);
+  void PeakFitter(const short* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw);
 
   TF1    _f;
   int    _signalRegionStart;
@@ -154,7 +154,7 @@ bool CrvRecoEvent::FailedFit(TFitResultPtr fr)
   }
   return false;
 }
-void CrvRecoEvent::PeakFitter(const int* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw)
+void CrvRecoEvent::PeakFitter(const short* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw)
 {
   if(std::isnan(calibrationFactor) || calibrationFactor==0) return;
 
@@ -331,10 +331,10 @@ class CrvEvent
   //int    *_tdcSinceSpill;  //OLD
   Long64_t *_tdcSinceSpill;
   double *_timeSinceSpill;
-  int    *_adc;
+  short  *_adc;
   float  *_temperature;
   int    *_boardStatus;
-  time_t  _timestamp;  //=long
+  Long64_t  _timestamp;  //time_t
 
   int    *_fitStatus;
   float  *_PEs;
@@ -391,7 +391,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
 //  _timeSinceSpill = new double[_numberOfFebs];  //OLD
   _tdcSinceSpill  = new Long64_t[_numberOfFebs*_channelsPerFeb];
   _timeSinceSpill = new double[_numberOfFebs*channelsPerFeb];
-  _adc            = new int[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
+  _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
   _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
 
@@ -429,7 +429,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("spillIndex", &_spillIndex, "spillIndex/I");
   recoTree->Branch("spillNumber", &_spillNumber, "spillNumber/I");
   recoTree->Branch("boardStatus", _boardStatus, Form("boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
-  recoTree->Branch("spillTimestamp", &_timestamp);
+  recoTree->Branch("spillTimestamp", &_timestamp, "spillTimestamp/L");
   recoTree->Branch("eventNumber", &_eventNumber, "eventNumber/I");
   recoTree->Branch("tdcSinceSpill", _tdcSinceSpill, Form("tdcSinceSpill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("timeSinceSpill", _timeSinceSpill, Form("timeSinceSpill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
@@ -441,7 +441,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("beta", _beta, Form("beta[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("time", _time, Form("time[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("LEtime", _LEtime, Form("LEtime[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
-  recoTree->Branch("adc", _adc, Form("adc[%i][%i][%i]/I",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
+  recoTree->Branch("adc", _adc, Form("adc[%i][%i][%i]/S",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
   recoTree->Branch("recoStartBin", _recoStartBin, Form("recoStartBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoEndBin", _recoEndBin, Form("recoEndBin[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("pedestal", _pedestal, Form("pedestal[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
@@ -566,7 +566,7 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
       }
       if(_temperature[index]!=0 && _lastSpillIndex[index]!=_spillIndex)
       {
-        _histTemperatures[index]->SetPoint(_spillIndex,_spillIndex,_temperature[index]);
+        _histTemperatures[index]->SetPoint(_histTemperatures[index]->GetN(),_spillIndex,_temperature[index]);
         _lastSpillIndex[index]=_spillIndex;
       }
     }
@@ -679,13 +679,47 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals)
     fwhm = rightX-leftX;
     signals = h.Integral(15,150);
 }
+double PoissonFunction(double *x, double *par)
+{
+    return par[0]*TMath::Poisson(x[0],par[1]);
+}
+void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals)
+{
+    float maxX=0;
+    float maxValue=0;
+    for(int i=15; i<=h.GetNbinsX(); i++)
+    {
+      if(h.GetBinContent(i)>maxValue) {maxValue=h.GetBinContent(i); maxX=h.GetBinCenter(i);}
+    }
+    if(maxValue<20) return;
+
+    //Fit range
+    Double_t fitRangeStart=0.6*maxX;
+    Double_t fitRangeEnd  =1.4*maxX;
+    if(fitRangeStart<20.0) fitRangeStart=20.0;
+
+    TF1 fit("Poisson",PoissonFunction,fitRangeStart,fitRangeEnd,2);
+    fit.SetParameter(0,maxValue);
+    fit.SetParameter(1,maxX);
+    fit.SetLineColor(kRed);
+    fit.SetParNames("Const","mean");
+    h.Fit(&fit,"QR");
+    fit.Draw("same");
+
+    mpv = fit.GetMaximumX();
+    float halfMaximum = fit.Eval(mpv)/2.0;
+    float leftX = fit.GetX(halfMaximum,0.0,mpv);
+    float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
+    fwhm = rightX-leftX;
+    signals = h.Integral(15,150);
+}
 
 void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
-                    float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples, time_t &timestamp)
+                    float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples, Long64_t &timestamp) //time_t
 {
   if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
 
-  time_t timestampTmp;
+  Long64_t  timestampTmp;  //time_t
   int   nEventsExpected;
   int   nEventsActual;
   bool  spillStored;
@@ -698,7 +732,8 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 
   treeSpills->GetEntry(0);
   timestamp=timestampTmp;  //to get the time stamp of the first spill, that gets overwritten at the next GetEntry calls
-  txtFile<<"timestamp: "<<ctime(&timestamp);
+  long timestampL=timestamp;  //long required below
+  txtFile<<"timestamp: "<<ctime(&timestampL);
 
   int nEventsExpectedTotal=0;   //of the spills that were stored
   int nEventsActualTotal=0;
@@ -821,8 +856,9 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
 
   int   run=0;
   int   subrun=0;
-  time_t timestamp;  //=long
+  Long64_t  timestamp; //time_t
   int   *febID = new int[numberOfFebs];
+  int    nSpillsTotal=treeSpills->GetEntries();
   int    nSpillsActual;
   int   *nFebSpillsActual = new int[numberOfFebs];
   float *febTemperaturesAvg = new float[numberOfFebs];
@@ -843,8 +879,9 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   TTree *recoTreeSummary = new TTree("runSummary","runSummary");
   recoTreeSummary->Branch("runNumber", &run, "runNumber/I");
   recoTreeSummary->Branch("subrunNumber", &subrun, "subrunNumber/I");
-  recoTreeSummary->Branch("timestamp", &timestamp);
+  recoTreeSummary->Branch("timestamp", &timestamp, "timestamp/L");
   recoTreeSummary->Branch("febID", febID, Form("febID[%i]/I",numberOfFebs));
+  recoTreeSummary->Branch("spillsTotal", &nSpillsTotal, "spillsTotal/I");
   recoTreeSummary->Branch("spillsRecorded", &nSpillsActual, "spillsRecorded/I");
   recoTreeSummary->Branch("eventsRecorded", &nEventsActual, "eventsRecorded/I");
   recoTreeSummary->Branch("febSpills", nFebSpillsActual, Form("febSpills[%i]/I",numberOfFebs));
@@ -1134,7 +1171,7 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
   std::cout<<"Mean far side    "<<std::setw(8)<<meanFar[0]<<"  "<<std::setw(8)<<meanFar[1]<<std::endl;
 }
 
-void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &pdfFileName, const std::string &txtFileName)
+void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -1192,7 +1229,8 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         float mpv=0;
         float fwhm=0;
         float nsignals=0;
-        LandauGauss(*h[i], mpv, fwhm, nsignals);
+        if(!usePoisson) LandauGauss(*h[i], mpv, fwhm, nsignals);
+        else Poisson(*h[i], mpv, fwhm, nsignals);
         mpvs[i].push_back(mpv);
         fwhms[i].push_back(fwhm);
         signals[i].push_back(nsignals);
@@ -1307,7 +1345,8 @@ void printHelp()
 {
   std::cout<<"Use as"<<std::endl;
   std::cout<<"recoCrv -h             Prints this help."<<std::endl;
-  std::cout<<"recoCrv RUNNUMBER      Reconstructs a run."<<std::endl;
+  std::cout<<"recoCrv RUNNUMBER [-g] Reconstructs a run."<<std::endl;
+  std::cout<<"-p                     Uses Poisson fit for the PE yield distribution, instead of a convoluted Gauss-Landau fit."<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -1324,6 +1363,11 @@ int main(int argc, char **argv)
   gStyle->SetOptFit(0);
 
   std::string runNumber=argv[1];
+  bool usePoisson=false;
+  if(argc==3)
+  {
+    if(strcmp(argv[2],"-p")==0) usePoisson=true;
+  }
   std::string inFileName;
   std::string calibFileName;
   std::string recoFileName;
@@ -1331,7 +1375,7 @@ int main(int argc, char **argv)
   std::string txtFileName;
   makeFileNames(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName);
 
-  process(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName);
+  process(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName, usePoisson);
 
 //#pragma message "USING WRONG CALIB CONSTANTS"
 //std::cout<<"USING WRONG CALIB CONSTANTS"<<std::endl;

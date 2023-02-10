@@ -3,7 +3,7 @@ Code to manage data from the CRV test stand.
 
 <h3>Build</h3>  
 source /cvmfs/mu2e.opensciencegrid.org/setupmu2e-art.sh<br>
-muse setup<br>
+muse setup (works with muse setup SimJob MDC2020n)<br>
 mkdir workDir<wr> 
 cd workDir<br>
 git clone git@github.com:Mu2e/CRVteststand.git<br>
