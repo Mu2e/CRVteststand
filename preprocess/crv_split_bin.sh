@@ -72,8 +72,8 @@ do
 
         # note: this code contains file name assumptions
 
-        $SOURCEDIR/crv_split.py $INFS $OTFS $NE $NSPLIT
-        #$SOURCEDIR/crv_split.py $INFS $OTFS 1000
+        $SOURCEDIR/crv_split_bin.py $INFS $OTFS $NE $NSPLIT
+        #$SOURCEDIR/crv_split_bin.py $INFS $OTFS 1000
 
     fi
 
