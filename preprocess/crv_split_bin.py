@@ -80,6 +80,7 @@ for chunk in read_chunk(infile):
                 else:
                     splitPt.append(tSplitPt)
                     indexSpill = beginSpill.index(bSpill)
+                    break
         if len(splitPt)<len(beginEvent):
             splitPt.append(tSplitPt) # take care of the last spill 
         # at this point, data[:(splitPt[0])] belongs to previous spill / run header
