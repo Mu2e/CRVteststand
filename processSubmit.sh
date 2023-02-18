@@ -91,6 +91,9 @@ processes=`< $rawFiles wc -l`
 jobname="mu2eWideband"
 currentDir=`pwd`
 
+#normal jobs only require 1GB of memory
+#LED jobs require 4GB of memory
+
 jobsub_submit \
 -N $processes \
 -e JOBNAME=$jobname \
@@ -98,7 +101,7 @@ jobsub_submit \
 -e EXECDIR=$execDir \
 -e OUTPUTDIR=$outputDir \
 -e POISSON=$poisson \
---memory=1GB \
+--memory=4GB \
 --disk=100GB \
 --expected-lifetime=4h \
 --resource-provides usage_model=OPPORTUNISTIC,DEDICATED,OFFSITE \

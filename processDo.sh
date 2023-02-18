@@ -69,7 +69,7 @@ date
 echo "===================================================="
 echo "Calibrating run/subrub $runAndSubrun"
 calibCrv $runAndSubrun 
-ls -l crvparsed
+ls -l crvcalib
 date
 echo "===================================================="
 echo "Reconstructing run/subrub $runAndSubrun"
@@ -78,7 +78,7 @@ if [ $POISSON -eq 0 ]; then
 else
   recoCrv $runAndSubrun -p
 fi
-ls -l crvparsed
+ls -l crvreco
 date
 echo "===================================================="
 
