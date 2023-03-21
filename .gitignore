@@ -1,4 +1,4 @@
-
+analysis/testbench/*.pdf
 .vscode/settings.json
 analysis/testbench/dev_notes.txt
 *.pyc

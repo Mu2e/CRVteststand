@@ -147,7 +147,7 @@ class crv_spill:
 
     #??? active FEB mask???
 
-    def checkDQM(self):
+    def checkDQM(self, verbose = True):
         # filling in dqmRedFlag.
         # a spill that has everything normal should see dqmRedFlag == 0x0
         # bit masks for different criteria. 
@@ -177,6 +177,8 @@ class crv_spill:
             for j in range(8):
                 if self.busSiPMBias[i][j] < 50:
                     self.dqmRedFlag |= (0b1 << (8+i*8+j))
+        if verbose and self.dqmRedFlag != 0:
+            print ("Spill index %i failed DQM check: "%(self.spillIndex), self.dqmRedFlag)
         return
 
         # FIXME: temperature DQM???

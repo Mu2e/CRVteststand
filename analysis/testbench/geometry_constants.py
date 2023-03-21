@@ -78,6 +78,7 @@ geom_dict_crvaging001 = {
     'moduleOffsetX' : [0.],
     'moduleOffsetY' : [0.],
     'FEB'           : [[1,0]],
+    'nFEB'          : 2,
     'badChannels'   : [],
     'triggerOnlyChs': [],
     'canvasSize'    : (8,2.4)
@@ -89,6 +90,7 @@ geom_dict_crvaging004 = {
     'moduleOffsetX' : [0., 0., 0.],
     'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(3)],
     'FEB'           : [[-1,0], [1,2], [3,-1]],
+    'nFEB'          : 4,
     'badChannels'   : [],
     'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)],
                       # 2-tuple list if channels are designated in the triggering layers 
@@ -101,6 +103,7 @@ geom_dict_crvaging006 = {
     'moduleOffsetX' : [0., 0., 0., 0.],
     'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(4)],
     'FEB'           : [[-1,0], [1,2], [3,-1], [4,5]],
+    'nFEB'          : 6,
     'badChannels'   : [(4, 12),(4, 13),(4, 14),(4, 15)], # CMB reports no temperature; allegedly good data
     'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)] + 
                       [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)],
@@ -114,6 +117,7 @@ geom_dict_crvaging007 = {
     'moduleOffsetX' : [0., 0., 0., 0.],
     'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(4)],
     'FEB'           : [[1,0], [-1,2], [3,-1], [4,5]],
+    'nFEB'          : 6,
     'badChannels'   : [], # [(2, 4),(2, 5),(2, 6),(2, 7),(3, 0),(3, 1),(3, 2),(3, 3)], 
     'triggerOnlyChs': [(2, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)] + 
                       [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)],
@@ -121,8 +125,21 @@ geom_dict_crvaging007 = {
     'canvasSize'    : (8,8)
 }
 
+geom_dict_crvled001 = {
+    'tag'           : 'config_001_CRV_L_A',
+    'module'        : ['CRV_L_A_HORSTD'],
+    'moduleOffsetX' : [0.],
+    'moduleOffsetY' : [0.],
+    'FEB'           : [[1,0]],
+    'nFEB'          : 2,
+    'badChannels'   : [],
+    'triggerOnlyChs': [],
+    'canvasSize'    : (8,2.4)
+}
+
 # setup_dict can be used to retrieve geom dict (and number of FEBs) from the file names
 setup_dict = {'crvaging-001': [geom_dict_crvaging001],
               'crvaging-004': [geom_dict_crvaging004],
               'crvaging-006': [geom_dict_crvaging006],
-              'crvaging-007': [geom_dict_crvaging007]}
+              'crvaging-007': [geom_dict_crvaging007],
+              'crvled-001':[geom_dict_crvled001]}
