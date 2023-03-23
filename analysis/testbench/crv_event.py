@@ -12,8 +12,8 @@ import os, sys, json, glob, datetime
 import math
 import argparse, textwrap
 import constants, geometry_constants
-import utils
-from utils import treeInitialization
+import root_utils
+from root_utils import treeInitialization
 import pprint
 
 class crv_event:
@@ -96,7 +96,7 @@ class crv_event:
             self.LEtime = np.reshape(runtree.LEtime, (nFEB, geometry_constants.nChannelPerFEB)) #LEtime[4][64]/F
             self.recoStartBin = np.reshape(runtree.recoStartBin, (nFEB, geometry_constants.nChannelPerFEB)) #recoStartBin[4][64]/I
             self.recoEndBin = np.reshape(runtree.recoEndBin, (nFEB, geometry_constants.nChannelPerFEB)) #recoEndBin[4][64]/I
-        if (detailLevel & 0b0010):
+        if (detailLevel & 0b0001):
             self.PEsReflectedPulse = np.reshape(runtree.PEsReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #PEsReflectedPulse[4][64]/F
             self.PEsTemperatureCorrectedReflectedPulse = np.reshape(runtree.PEsTemperatureCorrectedReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #PEsTemperatureCorrectedReflectedPulse[4][64]/F
             self.pulseHeightReflectedPulse = np.reshape(runtree.pulseHeightReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #pulseHeightReflectedPulse[4][64]/F
@@ -115,7 +115,8 @@ class crv_event:
 
     def geomAttributeFill(self, benchGeometryList, attribute):
         tAttribute = None
-        exec("tAttribute = self."+attribute)
+        tAttribute = eval("self.%s"%attribute)
+        # print (tAttribute)
         if tAttribute is None:
             sys.exit("ERROR: CRV_event: %s is not loaded"%(attribute))
         geomAttribute = []

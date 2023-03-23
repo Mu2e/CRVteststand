@@ -66,6 +66,6 @@ def getfilelist(taglist):
         runnumlist += data_location[tag]["run#"]
         for irun in data_location[tag]["run#"]:
             configlist.append(data_location[tag]["config"])
-            nFEBlist.append(geometry_constants.setup_dict[data_location[tag]["config"]]["nFEB"])
+            nFEBlist.append(geometry_constants.setup_dict[data_location[tag]["config"]][0]["nFEB"])
     return filenamelist, runnumlist, configlist, nFEBlist
 

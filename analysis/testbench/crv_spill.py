@@ -12,8 +12,8 @@ import os, sys, json, glob, datetime
 import math
 import argparse, textwrap
 import constants, geometry_constants
-import utils
-from utils import treeInitialization
+import root_utils
+from root_utils import treeInitialization
 import crv_event
 import pprint
 from datetime import datetime
@@ -67,15 +67,15 @@ class crv_spill:
         boardStatus = np.reshape(spilltree.spill_boardStatus, (self.nFEB, 22)) # spill_boardStatus[4][22]/I
         self.boardID = np.array([boardStatus[i][0] for i in range(self.nFEB)])
         self.recentSpillNumber = np.array([boardStatus[i][1] for i in range(self.nFEB)])
-        self.temperatureFEB = np.array([boardStatus[i][2]*0.01 for i in range(self.nFEB)]) # typo in docdb-37635
-        self.supply15V = np.array([boardStatus[i][3]/1000. for i in range(self.nFEB)])
-        self.supply10V = np.array([boardStatus[i][4]/1000. for i in range(self.nFEB)])
-        self.supply5V = np.array([boardStatus[i][5]/1000. for i in range(self.nFEB)])
-        self.supplyN5V = np.array([boardStatus[i][6]/1000. for i in range(self.nFEB)])
-        self.supply3V3 = np.array([boardStatus[i][7]/1000. for i in range(self.nFEB)])
-        self.supply2V5 = np.array([boardStatus[i][8]/1000. for i in range(self.nFEB)])
-        self.supply1V8 = np.array([boardStatus[i][9]/1000. for i in range(self.nFEB)])
-        self.supply1V2 = np.array([boardStatus[i][10]/1000. for i in range(self.nFEB)])
+        self.temperatureFEB = np.array([boardStatus[i][2]*0.01 for i in range(self.nFEB)]) # typo in docdb-37635        
+        self.supply1V2 = np.array([boardStatus[i][3]*0.001 for i in range(self.nFEB)])
+        self.supply1V8 = np.array([boardStatus[i][4]*0.001 for i in range(self.nFEB)])
+        self.supply5V = np.array([boardStatus[i][5]*0.002 for i in range(self.nFEB)])
+        self.supply10V = np.array([boardStatus[i][6]*0.004 for i in range(self.nFEB)])
+        self.supply2V5 = np.array([boardStatus[i][7]*0.001 for i in range(self.nFEB)])
+        self.supplyN5V = np.array([boardStatus[i][8]*(-0.002) for i in range(self.nFEB)])
+        self.supply15V = np.array([boardStatus[i][9]*0.006 for i in range(self.nFEB)])
+        self.supply3V3 = np.array([boardStatus[i][10]*0.001 for i in range(self.nFEB)])        
         self.busSiPMBias = np.array([boardStatus[i][11:19] for i in range(self.nFEB)])/50.
         self.TrigCtrlReg = np.array([boardStatus[i][19] for i in range(self.nFEB)])
         self.settingPipelineLen = np.array([boardStatus[i][20] for i in range(self.nFEB)])
@@ -93,6 +93,7 @@ class crv_spill:
         # Bit 6: Spill Inhibit enable.
         # Bit 7: Not used.
         # Bit 8: On card test pulser enabled
+        # Bit 9: Test pulser enabled for one spill only
 
         if hasattr(spilltree, "spill_timestamp"):
             self.tsEpoch = spilltree.spill_timestamp
@@ -127,6 +128,8 @@ class crv_spill:
         nEvent = self.nEventsActual            
         if nEvent == 0:
             print("WARNING: CRV_spill: getTempCMB: Spill # %i has no actual event"%self.spillNumber)
+            averageTemp = np.empty((nFEBFile,geometry_constants.nChannelPerFEB,))
+            averageTemp[:] = np.nan
         else:
             if doAverage:                
                 for index in range(self.nEventsActual):
@@ -158,27 +161,38 @@ class crv_spill:
         # 0xf0: reserved
         # all the higher bits: bulk bias voltages < 50 V for each AFE (nFEB*8)
         self.dqmRedFlag = 0x0
+        if verbose:
+            print ("***", self.spillIndex, self.spillNumber)
         if (self.spillIndex != self.spillNumber):
             self.dqmRedFlag |= 0x01
+        if verbose:
+            print ("***", self.spillStored)
         if (self.spillStored == 0):
             self.dqmRedFlag |= 0x02
+        if verbose:
+            print ("***", self.nEventsActual)
         if (self.nEventsActual == 0):
             self.dqmRedFlag |= 0x04
-        if ((self.supply15V < 14.5) or (self.supply15V > 15.5) or
-            (self.supply10V < 9.5) or (self.supply10V > 10.5) or
-            (self.supply5V < 4.5) or (self.supply5V > 5.5) or
-            (self.supplyN5V < -5.5) or (self.supplyN5V > -4.5) or
-            (self.supply3V3 < 2.8) or (self.supply3V3 > 3.8) or
-            (self.supply2V5 < 2.) or (self.supply2V5 > 3.) or
-            (self.supply1V8 < 1.3) or (self.supply1V8 > 2.3) or
-            (self.supply1V2 < 0.7) or (self.supply1V2 > 1.7) ):
+        if verbose:
+            print ("***", self.supply15V, self.supply10V, self.supply5V, self.supplyN5V, self.supply3V3, self.supply2V5, self.supply1V8, self.supply1V2)
+        if ((self.supply15V < 14.5).any() or (self.supply15V > 15.5).any() or
+            # (self.supply10V < 9.5).any() or (self.supply10V > 10.5).any() or # One of the FEB seems to be consistently around 10.8V
+            (self.supply10V < 9.0).any() or (self.supply10V > 11.0).any() or
+            (self.supply5V < 4.5).any() or (self.supply5V > 5.5).any() or
+            (self.supplyN5V < -5.5).any() or (self.supplyN5V > -4.5).any() or
+            (self.supply3V3 < 2.8).any() or (self.supply3V3 > 3.8).any() or
+            (self.supply2V5 < 2.).any() or (self.supply2V5 > 3.).any() or
+            (self.supply1V8 < 1.3).any() or (self.supply1V8 > 2.3).any() or
+            (self.supply1V2 < 0.7).any() or (self.supply1V2 > 1.7).any() ):
             self.dqmRedFlag |= 0x08
         for i in range(self.nFEB):
+            if verbose:
+                print ("***", self.busSiPMBias[i])
             for j in range(8):
                 if self.busSiPMBias[i][j] < 50:
                     self.dqmRedFlag |= (0b1 << (8+i*8+j))
         if verbose and self.dqmRedFlag != 0:
-            print ("Spill index %i failed DQM check: "%(self.spillIndex), self.dqmRedFlag)
+            print ("Spill index %i failed DQM check: %x"%(self.spillIndex, self.dqmRedFlag))
         return
 
         # FIXME: temperature DQM???

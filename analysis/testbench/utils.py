@@ -20,6 +20,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
 import math
 import argparse, textwrap
+import root_utils
 import constants, geometry_constants
 import crv_event, crv_spill
 import filepath
@@ -27,49 +28,6 @@ import filepath
 ##################################  GLOBAL CONTAINER   ######################################
 
 lastTsEpoch = None
-
-################################## UTILS FOR ROOT TREE ######################################
-
-def type_convert_array_ROOT(arraytype):
-    convert_dict = {"b":"B", "B":"b", "u":"L", "h":"S",
-                    "H":"s", "i":"I", "I":"i", "l":"L",
-                    "L":"l", "q":"G", "Q":"g", "f":"F",
-                    "d":"D"}
-    if arraytype in convert_dict:
-        return convert_dict[arraytype]
-    else:
-        print ("WARNING: utils.type_convert_array_ROOT: array type ",arraytype," not allowed in array.array; changed to 64-bit floating point.")
-        return "D"
-
-# input branchlist is a list of 2-tuples. Each 2-tuple contains branch name and data type.
-# data types are consistent with data types in array.array;
-# type "v/Vxx" indicates ROOT.vector.
-# e.g. a type vint8 means ROOT vector of int8_t
-# function returns a container dictionary, keys are the branch names, values are arrays/vector
-# to store entry data
-def treeInitialization(tree, branchlist, exportBranches = False): 
-    ROOT_entry_dict = {}
-    branches = []
-    for branch in branchlist: # branch is (name, type)
-        branchname = branch[0]
-        branchtype = branch[1]
-        tcontainer = None
-        if branchtype[0] == 'v' or branchtype[0] == 'V':
-            tcontainer = ROOT.vector(branchtype[1:])()
-        else: 
-            tcontainer = array(branchtype,[0])
-        ROOT_entry_dict.update({branchname:tcontainer})
-        if branchtype[0] == 'v' or branchtype[0] == 'V':
-            tbranch = tree.Branch(branchname, ROOT_entry_dict[branchname])
-            branches.append(tbranch)
-        else:
-            roottype = type_convert_array_ROOT(branchtype)
-            tbranch = tree.Branch(branchname,ROOT_entry_dict[branchname],branchname+"/"+roottype)
-            branches.append(tbranch)
-    if exportBranches:
-        return ROOT_entry_dict, branches
-    else:
-        return ROOT_entry_dict
 
 ################################## UTILS FOR TIME PLOT ######################################
 
@@ -120,7 +78,7 @@ def plot_dqm(filename_list, plot_dict, dqmFilter = '', nSmooth = 1, show = False
         full_plot_dict.update({k:[]})
         plotData.update({k:{}})
 
-    for k,vl in plot_dict.iteritems():
+    for k,vl in plot_dict.items():
         for v in vl:
             tAttribute = v.split('[')[0] if '[' in v else v
             if tAttribute not in plotted_attribute:
@@ -138,8 +96,11 @@ def plot_dqm(filename_list, plot_dict, dqmFilter = '', nSmooth = 1, show = False
                     tSkip = int(tSlicingIndex[2])
                 for i in range(tStart, tEnd, tSkip):
                     full_plot_dict[k].append(tNameStem+'[%i]'%(i))
-
-    for k,vl in full_plot_dict.iteritems():
+    
+    # print (plotted_attribute)
+    # print (full_plot_dict)
+    
+    for k,vl in full_plot_dict.items():
         # treat each group of files matching keyword 'k' together
         plotData[k].update({"ts":[], "dqm":[]})
         for v in vl:
@@ -160,21 +121,24 @@ def plot_dqm(filename_list, plot_dict, dqmFilter = '', nSmooth = 1, show = False
                         iEvent += tSpill.nEventsActual
                         if iEvent > nEvent:
                             sys.exit("Error: utils.plot_dqm: %s nEvent = %i, Spill # %i is reading iEvent = %i"%(filename, nEvent, iSpill, iEvent))
+                    # print (tSpill.temperatureCMB)
                     if dqmFilter:
-                        tSpill.checkDQM() # populate tSpill.dqmRedFlag
+                        tSpill.checkDQM(True) # populate tSpill.dqmRedFlag
+                    print ("*** spill %04i DQM = %x"%(tSpill.spillNumber, tSpill.dqmRedFlag))
                     plotData[k]["ts"].append(tSpill.tsEpoch)
                     if dqmFilter:
-                        exec("plotData[k]['dqm'].append(tSpill.dqmRedFlag"+dqmFilter+")")
+                        plotData[k]['dqm'].append(eval("tSpill.dqmRedFlag"+dqmFilter))
                     else:
                         plotData[k]['dqm'].append(True)
                     for v in vl:
                         try:
-                            exec("plotData[k][v].append(tSpill."+v+")")
+                            plotData[k][v].append(eval("tSpill.%s"%v))
                         except:
                             try:
-                                exec("plotData[k][v].append(tSpill.temp_dict['"+v.split('[')[0]+"']"+('['+'['.join(v.split('[')[1:]) if len(v.split('['))>1 else '')+")")
+                                tval = eval("tSpill.temp_dict['"+v.split('[')[0]+"']"+("["+'['.join(v.split('[')[1:]) if len(v.split('['))>1 else ''))
+                                plotData[k][v].append(tval)
                             except:
-                                sys.exit("Error: utils.plot_dqm: %s does not exist as a spill attribute"%(v))
+                                sys.exit("Error: utils.plot_dqm: %s does not exist in the spill attribute"%(v))
                 fFile.Close()
         
         plotData[k]["ts"] = smoothing(plotData[k]["ts"], nSmooth, 'x')
@@ -236,7 +200,7 @@ def SpillAttributeAvg(filename, attributeName, dqmFilter = '== 0x0'):
             iEvent += tSpill.nEventsActual
             if iEvent > nEvent:
                 sys.exit("Error: utils.plot_dqm: %s nEvent = %i, Spill # %i is reading iEvent = %i"%(filename, nEvent, iSpill, iEvent))
-        tSpill.checkDQM() # by default requires good DQM flag to be counted towards the average
+        tSpill.checkDQM(False) # by default requires good DQM flag to be counted towards the average
         DQMgood = None
         exec("DQMgood = tSpill.dqmRedFlag"+dqmFilter)
         if DQMgood:
