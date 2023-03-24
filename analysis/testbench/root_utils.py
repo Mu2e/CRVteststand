@@ -17,6 +17,10 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
 import math
 
+##################################  GLOBAL CONTAINER   ######################################
+
+lastTsEpoch = None
+
 ################################## UTILS FOR ROOT TREE ######################################
 
 def type_convert_array_ROOT(arraytype):

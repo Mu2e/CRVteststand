@@ -115,13 +115,13 @@ class crv_spill:
                 self.tsEpoch = time.mktime(raw_dt)
                 # use "datetime.fromtimestamp(self.tsEpoch)" to convert to datetime objects
                 
-                utils.lastTsEpoch = (self.spillNumber, self.tsEpoch)
+                root_utils.lastTsEpoch = (self.spillNumber, self.tsEpoch)
             else: 
-                if utils.lastTsEpoch and self.spillNumber>utils.lastTsEpoch[0]:
-                    self.tsEpoch = utils.lastTsEpoch[1]+float(self.spillNumber-utils.lastTsEpoch[0])*(constants.tDataTaking+constants.tDataTransfer)
+                if root_utils.lastTsEpoch and self.spillNumber>root_utils.lastTsEpoch[0]:
+                    self.tsEpoch = root_utils.lastTsEpoch[1]+float(self.spillNumber-root_utils.lastTsEpoch[0])*(constants.tDataTaking+constants.tDataTransfer)
                 else:
                     sys.exit("Error: CRV_spill: spill # %i reading spill timestamp unsuccessful! \n"%self.spillNumber +
-                             "                  last good timestamp at spill # %i: %i"%(utils.lastTsEpoch if utils.lastTsEpoch else (-1,-1)))
+                             "                  last good timestamp at spill # %i: %i"%(root_utils.lastTsEpoch if root_utils.lastTsEpoch else (-1,-1)))
 
     def getTempCMB(self, runtree, nFEBFile, iEntryStart, doAverage = True):
         averageTemp = None

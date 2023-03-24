@@ -25,10 +25,6 @@ import constants, geometry_constants
 import crv_event, crv_spill
 import filepath
 
-##################################  GLOBAL CONTAINER   ######################################
-
-lastTsEpoch = None
-
 ################################## UTILS FOR TIME PLOT ######################################
 
 def ts2datetime(ts): # inheritance from g-2 field analysis code
@@ -123,8 +119,8 @@ def plot_dqm(filename_list, plot_dict, dqmFilter = '', nSmooth = 1, show = False
                             sys.exit("Error: utils.plot_dqm: %s nEvent = %i, Spill # %i is reading iEvent = %i"%(filename, nEvent, iSpill, iEvent))
                     # print (tSpill.temperatureCMB)
                     if dqmFilter:
-                        tSpill.checkDQM(True) # populate tSpill.dqmRedFlag
-                    print ("*** spill %04i DQM = %x"%(tSpill.spillNumber, tSpill.dqmRedFlag))
+                        tSpill.checkDQM(False) # populate tSpill.dqmRedFlag
+                        print ("*** spill %04i DQM = %x"%(tSpill.spillNumber, tSpill.dqmRedFlag))
                     plotData[k]["ts"].append(tSpill.tsEpoch)
                     if dqmFilter:
                         plotData[k]['dqm'].append(eval("tSpill.dqmRedFlag"+dqmFilter))
