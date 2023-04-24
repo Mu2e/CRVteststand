@@ -20,11 +20,13 @@ from datetime import datetime
 import time 
 
 class crv_spill:
-    def __init__(self, spilltree, iSpill, isRaw = False):
+    def __init__(self, spilltree, iSpill, isRaw = False, isCosmic = True):
 
         # initializer to load CRV_spill from ROOT tree.
         # input: spilltree: ROOT TTree object that corresponds to "spill" tree in the crvparsed or crvreco ROOT files.
         #        iSpill: index of the spill to load.
+        #        isRaw: if the input file is a raw data file or a reconstructed file
+        #        isCosmic: if the run is a cosmic run or an LED run
         
         try:
             spilltree.GetEntry(iSpill)
@@ -64,7 +66,7 @@ class crv_spill:
         self.nSample = spilltree.spill_number_of_samples # spill_number_of_samples/I
 
         # board status from docdb-37635
-        boardStatus = np.reshape(spilltree.spill_boardStatus, (self.nFEB, 22)) # spill_boardStatus[4][22]/I
+        boardStatus = np.reshape(np.array(spilltree.spill_boardStatus, dtype=np.int32), (self.nFEB, 22)) # spill_boardStatus[4][22]/I
         self.boardID = np.array([boardStatus[i][0] for i in range(self.nFEB)])
         self.recentSpillNumber = np.array([boardStatus[i][1] for i in range(self.nFEB)])
         self.temperatureFEB = np.array([boardStatus[i][2]*0.01 for i in range(self.nFEB)]) # typo in docdb-37635        
@@ -76,7 +78,7 @@ class crv_spill:
         self.supplyN5V = np.array([boardStatus[i][8]*(-0.002) for i in range(self.nFEB)])
         self.supply15V = np.array([boardStatus[i][9]*0.006 for i in range(self.nFEB)])
         self.supply3V3 = np.array([boardStatus[i][10]*0.001 for i in range(self.nFEB)])        
-        self.busSiPMBias = np.array([boardStatus[i][11:19] for i in range(self.nFEB)])/50.
+        self.busSiPMBias = np.array([boardStatus[i][11:19]/50. for i in range(self.nFEB)])
         self.TrigCtrlReg = np.array([boardStatus[i][19] for i in range(self.nFEB)])
         self.settingPipelineLen = np.array([boardStatus[i][20] for i in range(self.nFEB)])
         self.settingSampleLen = np.array([boardStatus[i][21] for i in range(self.nFEB)])        
@@ -118,17 +120,19 @@ class crv_spill:
                 root_utils.lastTsEpoch = (self.spillNumber, self.tsEpoch)
             else: 
                 if root_utils.lastTsEpoch and self.spillNumber>root_utils.lastTsEpoch[0]:
-                    self.tsEpoch = root_utils.lastTsEpoch[1]+float(self.spillNumber-root_utils.lastTsEpoch[0])*(constants.tDataTaking+constants.tDataTransfer)
+                    self.tsEpoch = root_utils.lastTsEpoch[1]+float(self.spillNumber-root_utils.lastTsEpoch[0])*(constants.timeDataSpill_cosmic if isCosmic else constants.timeDataSpill_led)
                 else:
-                    sys.exit("Error: CRV_spill: spill # %i reading spill timestamp unsuccessful! \n"%self.spillNumber +
-                             "                  last good timestamp at spill # %i: %i"%(root_utils.lastTsEpoch if root_utils.lastTsEpoch else (-1,-1)))
+                    # sys.exit("Error: CRV_spill: spill # %i reading spill timestamp unsuccessful! \n"%self.spillNumber +
+                    #          "                  last good timestamp at spill # %i: %i"%(root_utils.lastTsEpoch if root_utils.lastTsEpoch else (-1,-1)))
+                    print("*** WARNING: CRV_spill: __init__: Spill # %i has bad time stamp"%self.spillNumber)
+                    self.dqmRedFlag = 0x10
 
-    def getTempCMB(self, runtree, nFEBFile, iEntryStart, doAverage = True):
+    def getTempCMB(self, runtree, nFEBFile, iEntryStart, doAverage = False):
         averageTemp = None
         nEvent = self.nEventsActual            
         if nEvent == 0:
-            print("WARNING: CRV_spill: getTempCMB: Spill # %i has no actual event"%self.spillNumber)
-            averageTemp = np.empty((nFEBFile,geometry_constants.nChannelPerFEB,))
+            print("*** WARNING: CRV_spill: getTempCMB: Spill # %i has no actual event"%self.spillNumber)
+            averageTemp = np.empty((nFEBFile,geometry_constants.nChannelPerFEB,), dtype=np.float64)
             averageTemp[:] = np.nan
         else:
             if doAverage:                
@@ -136,7 +140,7 @@ class crv_spill:
                     tEvent = crv_event.crv_event(runtree, iEntryStart+index, 0b1000, nFEBFile, self.isRaw)
                     if tEvent.spillNumber != self.spillNumber:
                         nEvent = index
-                        print("WARNING: CRV_spill: getTempCMB: Spill # %i reporting %i actual events, containing %i events"%(self.spillNumber, self.nEventsActual, nEvent))
+                        print("*** SEVERE WARNING: CRV_spill: getTempCMB: Spill # %i reporting %i actual events, containing %i events"%(self.spillNumber, self.nEventsActual, nEvent))
                         break
                     if index == 0:                        
                         averageTemp = tEvent.temperature
@@ -158,23 +162,29 @@ class crv_spill:
         # 0x02: spillStored == 0
         # 0x04: nEventsActual == 0
         # 0x08: boardStatus values (other than bulk biases) out of reasonable range
-        # 0xf0: reserved
+        # 0x10: missing timestamp
+        # 0x20: manual DQM flag
+        # 0xc0: reserved
         # all the higher bits: bulk bias voltages < 50 V for each AFE (nFEB*8)
-        self.dqmRedFlag = 0x0
-        if verbose:
-            print ("***", self.spillIndex, self.spillNumber)
-        if (self.spillIndex != self.spillNumber):
-            self.dqmRedFlag |= 0x01
-        if verbose:
-            print ("***", self.spillStored)
+        if self.dqmRedFlag == None:
+            self.dqmRedFlag = 0x0
+        if (self.spillIndex + root_utils.startSpill != self.spillNumber):
+            if self.spillIndex == 1:
+                if verbose:
+                    print ("*** first spill has spill number", self.spillNumber)
+                root_utils.startSpill = self.spillNumber-1
+            else:
+                if verbose:
+                    print ("***", self.spillIndex, self.spillNumber)
+                self.dqmRedFlag |= 0x01
         if (self.spillStored == 0):
+            # if verbose:
+                # print ("***", self.spillStored)
             self.dqmRedFlag |= 0x02
-        if verbose:
-            print ("***", self.nEventsActual)
         if (self.nEventsActual == 0):
+            # if verbose:
+                # print ("***", self.nEventsActual)
             self.dqmRedFlag |= 0x04
-        if verbose:
-            print ("***", self.supply15V, self.supply10V, self.supply5V, self.supplyN5V, self.supply3V3, self.supply2V5, self.supply1V8, self.supply1V2)
         if ((self.supply15V < 14.5).any() or (self.supply15V > 15.5).any() or
             # (self.supply10V < 9.5).any() or (self.supply10V > 10.5).any() or # One of the FEB seems to be consistently around 10.8V
             (self.supply10V < 9.0).any() or (self.supply10V > 11.0).any() or
@@ -184,12 +194,14 @@ class crv_spill:
             (self.supply2V5 < 2.).any() or (self.supply2V5 > 3.).any() or
             (self.supply1V8 < 1.3).any() or (self.supply1V8 > 2.3).any() or
             (self.supply1V2 < 0.7).any() or (self.supply1V2 > 1.7).any() ):
+            if verbose:
+                print ("***", self.supply15V, self.supply10V, self.supply5V, self.supplyN5V, self.supply3V3, self.supply2V5, self.supply1V8, self.supply1V2)
             self.dqmRedFlag |= 0x08
         for i in range(self.nFEB):
-            if verbose:
-                print ("***", self.busSiPMBias[i])
             for j in range(8):
                 if self.busSiPMBias[i][j] < 50:
+                    if verbose:
+                        print ("***", "FEB", i, "SiPM #", j, self.busSiPMBias[i][j])
                     self.dqmRedFlag |= (0b1 << (8+i*8+j))
         if verbose and self.dqmRedFlag != 0:
             print ("Spill index %i failed DQM check: %x"%(self.spillIndex, self.dqmRedFlag))

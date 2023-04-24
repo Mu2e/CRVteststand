@@ -36,7 +36,8 @@ data_location = {
                 "1299-1312"      : {# cosmic data correstpond to temp scan
                     "type":"cosmics", 
                     "config":"crvaging-007",
-                    "run#":[1299, 1300, 1301, 1302, 1308, 1309, 1310, 1311, 1312],
+                    # "run#":[1299, 1300, 1301, 1302, 1308, 1309, 1310, 1311, 1312], 
+                    "run#":[1312], # all others removed. Some are short run <100 spills; many dqc issues, missing CMB temp. etc.
                     "location": "/pnfs/mu2e/scratch/outstage/ehrlich/wideband24/"},
                 "1315"           : {# 22 degC
                     "type":"cosmics", 
@@ -62,6 +63,8 @@ def getfilelist(taglist):
     for tag in taglist:
         rootdir = data_location[tag]["location"]+file_reco_subdir
         tnamelsit = glob.glob(rootdir+"*.root")
+        tnamelsit = list(filter(lambda x: int(x.split('/')[-1].split('.')[-2].split('_')[0]) in data_location[tag]["run#"], tnamelsit))
+        tnamelsit.sort(key=lambda x:(int(x.split('/')[-1].split('.')[-2].split('_')[0]), int(x.split('/')[-1].split('.')[-2].split('_')[1])))
         filenamelist += tnamelsit
         runnumlist += data_location[tag]["run#"]
         for irun in data_location[tag]["run#"]:

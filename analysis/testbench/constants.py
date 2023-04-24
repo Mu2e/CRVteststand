@@ -1,7 +1,12 @@
 sampleRate = 12.55 #ns
 
-tDataTaking = 120 #s
-tDataTransfer = 60 #s
+tDataTaking_cosmic = 120 #s
+tDataTransfer_cosmic = 60 #s
+timeDataSpill_cosmic = tDataTaking_cosmic + tDataTransfer_cosmic
+
+tDataTaking_led = 20 #s
+tDataTransfer_led = 220 #s
+timeDataSpill_led = tDataTaking_led + tDataTransfer_led
 
 import matplotlib as plt
 cmap = plt.cm.get_cmap('tab10')

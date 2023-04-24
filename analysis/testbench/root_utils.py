@@ -20,6 +20,7 @@ import math
 ##################################  GLOBAL CONTAINER   ######################################
 
 lastTsEpoch = None
+startSpill = 0
 
 ################################## UTILS FOR ROOT TREE ######################################
 
@@ -31,13 +32,13 @@ def type_convert_array_ROOT(arraytype):
     if arraytype in convert_dict:
         return convert_dict[arraytype]
     else:
-        print ("WARNING: utils.type_convert_array_ROOT: array type ",arraytype," not allowed in array.array; changed to 64-bit floating point.")
+        print ("WARNING: root_utils.type_convert_array_ROOT: array type ",arraytype," not allowed in array.array; changed to 64-bit floating point.")
         return "D"
 
 # input branchlist is a list of 2-tuples. Each 2-tuple contains branch name and data type.
 # data types are consistent with data types in array.array;
 # type "v/Vxx" indicates ROOT.vector.
-# e.g. a type vint8 means ROOT vector of int8_t
+# e.g. a type vint8_t means ROOT vector of int8_t
 # function returns a container dictionary, keys are the branch names, values are arrays/vector
 # to store entry data
 def treeInitialization(tree, branchlist, exportBranches = False): 
@@ -63,3 +64,9 @@ def treeInitialization(tree, branchlist, exportBranches = False):
         return ROOT_entry_dict, branches
     else:
         return ROOT_entry_dict
+
+def treeEntryDictPurge(branch_list, tree_entry_dict, exclusive_branch_list = []):
+    for item in branch_list:
+        if (item[1][0] == 'v' or item[1][0] == 'V') and item[1] not in exclusive_branch_list:
+            tree_entry_dict[item[0]].clear()
+    return

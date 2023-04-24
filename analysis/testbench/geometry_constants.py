@@ -34,6 +34,7 @@ dicounterPerLayer = 8
 nLayer            = 4
 nChannelPerFEB    = 64
 nCMBPerFEB        = 16
+nAFEPerFEB        = 8
 nChannelPerCMB    = 4
 xFiberPosition    = [0., channelToChannel, scintillatorBarWidth + gapSmall, channelToChannel + scintillatorBarWidth + gapSmall]
 

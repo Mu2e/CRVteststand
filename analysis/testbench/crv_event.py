@@ -36,7 +36,7 @@ class crv_event:
         # always load at least the basic event info
         if (detailLevel & 0b1111)==0b0: 
             detailLevel = 0b1000
-            print("WARNING: CRV_event: Attribute 'detailLevel' unspecified. Changed to '0b1000' to load only basic event information.")
+            print("*** WARNING: CRV_event: Attribute 'detailLevel' unspecified. Changed to '0b1000' to load only basic event information.")
 
         try:
             runtree.GetEntry(iEntry)
@@ -78,33 +78,33 @@ class crv_event:
         if (detailLevel & 0b1000):
             self.spillNumber = runtree.runtree_spill_num if isRaw else runtree.spillNumber #runtree_spill_num/I or spillNumber/I
             self.eventNumber = runtree.runtree_event_num if isRaw else runtree.eventNumber #runtree_event_num/I or eventNumber/I
-            self.temperature = np.reshape(runtree.runtree_temperature if isRaw else runtree.temperature, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_temperature[4][64]/L or temperature[4][64]/F
-            self.pedestal = None if isRaw else np.reshape(runtree.pedestal, (nFEB, geometry_constants.nChannelPerFEB)) #pedestal[4][64]/F
-            self.tdcSinceSpill = np.reshape(runtree.runtree_tdc_since_spill if isRaw else runtree.tdcSinceSpill, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_tdc_since_spill[4][64]/L or tdcSinceSpill[4][64]/L
-            self.timeSinceSpill = np.reshape(runtree.runtree_time_since_spill if isRaw else runtree.timeSinceSpill, (nFEB, geometry_constants.nChannelPerFEB)) #runtree_time_since_spill[4][64]/D or timeSinceSpill[4][64]/D
-            self.fitStatus = None if isRaw else np.reshape(runtree.fitStatus, (nFEB, geometry_constants.nChannelPerFEB)) #fitStatus[4][64]/I
-            self.fitStatusReflectedPulse = None if isRaw else np.reshape(runtree.fitStatusReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #fitStatusReflectedPulse[4][64]/I
+            self.temperature = np.reshape(np.array(runtree.runtree_temperature if isRaw else runtree.temperature, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #runtree_temperature[4][64]/L or temperature[4][64]/F
+            self.pedestal = None if isRaw else np.reshape(np.array(runtree.pedestal, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #pedestal[4][64]/F
+            self.tdcSinceSpill = np.reshape(np.array(runtree.runtree_tdc_since_spill if isRaw else runtree.tdcSinceSpill, dtype=np.int64), (nFEB, geometry_constants.nChannelPerFEB)) #runtree_tdc_since_spill[4][64]/L or tdcSinceSpill[4][64]/L
+            self.timeSinceSpill = np.reshape(np.array(runtree.runtree_time_since_spill if isRaw else runtree.timeSinceSpill, dtype=np.float64), (nFEB, geometry_constants.nChannelPerFEB)) #runtree_time_since_spill[4][64]/D or timeSinceSpill[4][64]/D
+            self.fitStatus = None if isRaw else np.reshape(np.array(runtree.fitStatus, dtype=np.int32), (nFEB, geometry_constants.nChannelPerFEB)) #fitStatus[4][64]/I
+            self.fitStatusReflectedPulse = None if isRaw else np.reshape(np.array(runtree.fitStatusReflectedPulse, dtype=np.int32), (nFEB, geometry_constants.nChannelPerFEB)) #fitStatusReflectedPulse[4][64]/I
             # FIXME: global timestamp (from Spill time + time since spill)??? 
         if (detailLevel & 0b0100):
-            self.adc = np.reshape(runtree.runtree_adc if isRaw else runtree.adc, (nFEB, geometry_constants.nChannelPerFEB, -1)) #adc[4][64][127]/I
+            self.adc = np.reshape(np.array(runtree.runtree_adc if isRaw else runtree.adc, dtype=np.int16), (nFEB, geometry_constants.nChannelPerFEB, -1)) #adc[4][64][127]/S
         if (detailLevel & 0b0010):
-            self.PEs = np.reshape(runtree.PEs, (nFEB, geometry_constants.nChannelPerFEB)) #PEs[4][64]/F
-            self.PEsTemperatureCorrected = np.reshape(runtree.PEsTemperatureCorrected, (nFEB, geometry_constants.nChannelPerFEB)) #PEsTemperatureCorrected[4][64]/F
-            self.pulseHeight = np.reshape(runtree.pulseHeight, (nFEB, geometry_constants.nChannelPerFEB)) #pulseHeight[4][64]/F
-            self.beta = np.reshape(runtree.beta, (nFEB, geometry_constants.nChannelPerFEB)) #beta[4][64]/F
-            self.time = np.reshape(runtree.time, (nFEB, geometry_constants.nChannelPerFEB)) #time[4][64]/F
-            self.LEtime = np.reshape(runtree.LEtime, (nFEB, geometry_constants.nChannelPerFEB)) #LEtime[4][64]/F
-            self.recoStartBin = np.reshape(runtree.recoStartBin, (nFEB, geometry_constants.nChannelPerFEB)) #recoStartBin[4][64]/I
-            self.recoEndBin = np.reshape(runtree.recoEndBin, (nFEB, geometry_constants.nChannelPerFEB)) #recoEndBin[4][64]/I
+            self.PEs = np.reshape(np.array(runtree.PEs, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #PEs[4][64]/F
+            self.PEsTemperatureCorrected = np.reshape(np.array(runtree.PEsTemperatureCorrected, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #PEsTemperatureCorrected[4][64]/F
+            self.pulseHeight = np.reshape(np.array(runtree.pulseHeight, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #pulseHeight[4][64]/F
+            self.beta = np.reshape(np.array(runtree.beta, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #beta[4][64]/F
+            self.time = np.reshape(np.array(runtree.time, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #time[4][64]/F
+            self.LEtime = np.reshape(np.array(runtree.LEtime, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #LEtime[4][64]/F
+            self.recoStartBin = np.reshape(np.array(runtree.recoStartBin, dtype=np.int32), (nFEB, geometry_constants.nChannelPerFEB)) #recoStartBin[4][64]/I
+            self.recoEndBin = np.reshape(np.array(runtree.recoEndBin, dtype=np.int32), (nFEB, geometry_constants.nChannelPerFEB)) #recoEndBin[4][64]/I
         if (detailLevel & 0b0001):
-            self.PEsReflectedPulse = np.reshape(runtree.PEsReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #PEsReflectedPulse[4][64]/F
-            self.PEsTemperatureCorrectedReflectedPulse = np.reshape(runtree.PEsTemperatureCorrectedReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #PEsTemperatureCorrectedReflectedPulse[4][64]/F
-            self.pulseHeightReflectedPulse = np.reshape(runtree.pulseHeightReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #pulseHeightReflectedPulse[4][64]/F
-            self.betaReflectedPulse = np.reshape(runtree.betaReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #betaReflectedPulse[4][64]/F
-            self.timeReflectedPulse = np.reshape(runtree.timeReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #timeReflectedPulse[4][64]/F
-            self.LEtimeReflectedPulse = np.reshape(runtree.LEtimeReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #LEtimeReflectedPulse[4][64]/F
-            self.recoStartBinReflectedPulse = np.reshape(runtree.recoStartBinReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #recoStartBinReflectedPulse[4][64]/I
-            self.recoEndBinReflectedPulse = np.reshape(runtree.recoEndBinReflectedPulse, (nFEB, geometry_constants.nChannelPerFEB)) #recoEndBinReflectedPulse[4][64]/I
+            self.PEsReflectedPulse = np.reshape(np.array(runtree.PEsReflectedPulse, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #PEsReflectedPulse[4][64]/F
+            self.PEsTemperatureCorrectedReflectedPulse = np.reshape(np.array(runtree.PEsTemperatureCorrectedReflectedPulse, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #PEsTemperatureCorrectedReflectedPulse[4][64]/F
+            self.pulseHeightReflectedPulse = np.reshape(np.array(runtree.pulseHeightReflectedPulse, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #pulseHeightReflectedPulse[4][64]/F
+            self.betaReflectedPulse = np.reshape(np.array(runtree.betaReflectedPulse, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #betaReflectedPulse[4][64]/F
+            self.timeReflectedPulse = np.reshape(np.array(runtree.timeReflectedPulse, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #timeReflectedPulse[4][64]/F
+            self.LEtimeReflectedPulse = np.reshape(np.array(runtree.LEtimeReflectedPulse, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #LEtimeReflectedPulse[4][64]/F
+            self.recoStartBinReflectedPulse = np.reshape(np.array(runtree.recoStartBinReflectedPulse, dtype=np.int32), (nFEB, geometry_constants.nChannelPerFEB)) #recoStartBinReflectedPulse[4][64]/I
+            self.recoEndBinReflectedPulse = np.reshape(np.array(runtree.recoEndBinReflectedPulse, dtype=np.int32), (nFEB, geometry_constants.nChannelPerFEB)) #recoEndBinReflectedPulse[4][64]/I
     
     #FIXME: 
     # def linkCRVSpill(spilltree, ):

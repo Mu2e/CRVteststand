@@ -1,4 +1,6 @@
 analysis/testbench/*.pdf
-.vscode/settings.json
+analysis/testbench/*.root
 analysis/testbench/.ipynb_checkpoints/*
+analysis/testbench/temporary.ipynb
+.vscode/settings.json
 *.pyc
