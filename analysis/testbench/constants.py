@@ -11,3 +11,5 @@ timeDataSpill_led = tDataTaking_led + tDataTransfer_led
 import matplotlib as plt
 cmap = plt.cm.get_cmap('tab10')
 colors = [cmap(i) for i in range(cmap.N)]
+
+rootcolors = [12, 46, 30, 38, 28, 40, 8, 9, 2, 4, 3, 6]

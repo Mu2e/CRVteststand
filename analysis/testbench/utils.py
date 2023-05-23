@@ -203,14 +203,74 @@ def plot_dqm(filename_list, plot_dict, dqmFilter = '', dqmVerbose = False, nSmoo
 
     return fig_list
 
+std_plotAttribute = [["temperatureFEB[0:2]", "temperatureCMB[0][0]"],
+                     ["temperatureFEB[2:4]", "temperatureCMB[2][0]"],
+                     ["temperatureFEB[4:6]", "temperatureCMB[4][0]"],
+                     ["supply15V[0:2]", "supply10V[0:2]"],
+                     ["supply5V[0:2]", "supplyN5V[0:2]"],
+                     ["supply3V3[0:2]", "supply2V5[0:2]"],
+                     ["supply1V8[0:2]", "supply1V2[0:2]"],
+                     ["supply15V[2:4]", "supply10V[2:4]"],
+                     ["supply5V[2:4]", "supplyN5V[2:4]"],
+                     ["supply3V3[2:4]", "supply2V5[2:4]"],
+                     ["supply1V8[2:4]", "supply1V2[2:4]"],
+                     ["supply15V[4:6]", "supply10V[4:6]"],
+                     ["supply5V[4:6]", "supplyN5V[4:6]"],
+                     ["supply3V3[4:6]", "supply2V5[4:6]"],
+                     ["supply1V8[4:6]", "supply1V2[4:6]"],
+                     ["busSiPMBias[0][0:4]"],
+                     ["busSiPMBias[0][4:8]"],
+                     ["busSiPMBias[1][0:4]"],
+                     ["busSiPMBias[1][4:8]"],
+                     ["busSiPMBias[2][0:4]"],
+                     ["busSiPMBias[2][4:8]"],
+                     ["busSiPMBias[3][0:4]"],
+                     ["busSiPMBias[3][4:8]"],
+                     ["busSiPMBias[4][0:4]"],
+                     ["busSiPMBias[4][4:8]"],
+                     ["busSiPMBias[5][0:4]"],
+                     ["busSiPMBias[5][4:8]"],
+                     ["settingPipelineLen[0:2]", "settingSampleLen[0:2]"],
+                     ["settingPipelineLen[2:4]", "settingSampleLen[2:4]"],
+                     ["settingPipelineLen[4:6]", "settingSampleLen[4:6]"],
+                     ["temperatureCMB[0][0:16:4]"], # channels on the same CMB read a single CMB temperature
+                     ["temperatureCMB[0][16:32:4]"],
+                     ["temperatureCMB[0][32:48:4]"],
+                     ["temperatureCMB[0][48:64:4]"],
+                     ["temperatureCMB[1][0:16:4]"],
+                     ["temperatureCMB[1][16:32:4]"],
+                     ["temperatureCMB[1][32:48:4]"],
+                     ["temperatureCMB[1][48:64:4]"],
+                     ["temperatureCMB[2][0:16:4]"],
+                     ["temperatureCMB[2][16:32:4]"],
+                     ["temperatureCMB[2][32:48:4]"],
+                     ["temperatureCMB[2][48:64:4]"],
+                     ["temperatureCMB[3][0:16:4]"],
+                     ["temperatureCMB[3][16:32:4]"],
+                     ["temperatureCMB[3][32:48:4]"],
+                     ["temperatureCMB[3][48:64:4]"],
+                     ["temperatureCMB[4][0:16:4]"],
+                     ["temperatureCMB[4][16:32:4]"],
+                     ["temperatureCMB[4][32:48:4]"],
+                     ["temperatureCMB[4][48:64:4]"],
+                     ["temperatureCMB[5][0:16:4]"],
+                     ["temperatureCMB[5][16:32:4]"],
+                     ["temperatureCMB[5][32:48:4]"],
+                     ["temperatureCMB[5][48:64:4]"]]
+
 ##################################   OTHER UTILS   ######################################
 
 def calibExtract_txt(filename):
-    localfilename = filename.split('/')[-1]
-    if localfilename.split('.')[0] != 'cal':
-        tpath = '/'.join(filename.split('/')[:-2])+'/'+filepath.file_calib_subdir
-        localfilename = 'cal.'+'.'.join(localfilename.split('.')[1:-1])+'.txt'
-        filename = tpath + localfilename
+    # OBSOLETE METHOD
+    # localfilename = filename.split('/')[-1]
+    # if localfilename.split('.')[0] != 'cal':
+        # tpath = '/'.join(filename.split('/')[:-2])+'/'+filepath.file_calib_subdir
+        # localfilename = 'cal.'+'.'.join(localfilename.split('.')[1:-1])+'.txt'
+        # filename = tpath + localfilename
+    # print ("Loading calibration information from", localfilename)
+    
+    if localfilename.split('.')[-1] != 'txt' and localfilename.split('.')[-1] != 'TXT':
+        localfilename = filepath.findlinked(localfilename, "caliTXT")
     print ("Loading calibration information from", localfilename)
     
     try:
