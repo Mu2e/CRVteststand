@@ -56,7 +56,7 @@ def findlinked(fullfilename, label):
     else:
         return filelist[0]
 
-datatag = {
+datatag = { #1299 onwards; updated to 1396. #FIXME: tag previous runs
           "LED_temp_scan_bad": {# bad data due to long spills / external HD
               "type":"LED", 
               "config":"crvled-001",
@@ -82,14 +82,40 @@ datatag = {
           "cosmics_delay": {
               "type":"cosmics", 
               "config":"crvaging-007",
-              "run#":[1370, 1354]} # 1370 with offset, 1354 as reference
+              "run#":[1370, 1354]}, # 1370 with offset, 1354 as reference
+          "cosmics_delay_phase_aligned": {
+              "type":"cosmics", 
+              "config":"crvaging-006",
+              "run#":[1379, 1380]}, # 1380 with offset, 1379 as reference
+          "crvaging007": {
+              "type":"cosmics", 
+              "config":"crvaging-007",
+              "run#":[1340, 1341, 1352, 1354]}, 
+          "crvaging006": {
+              "type":"cosmics", 
+              "config":"crvaging-006",
+              "run#":[1375, 1376]}, 
+          "trim_scan": {
+              "type":"cosmics", 
+              "config":"crvaging-006",
+              "run#":[1376, 1377, 1378],
+              "trim":[   0, -500, +500]},
+          "trim_scan_led_like": {
+              "type":"led", 
+              "config":"crvled-002",
+              "run#":[1381, 1382, 1383, 1384, 1385, 1386, 1387, 1388, 1390,
+                      1391, 1392, 1393, 1394, 1395, 1396],
+              "trim":[   0, -500, +500, +375, -375, -250, +250, +125, -125,
+                         0,    0,    0,    0,    0,    0],
+              "bulk":[   0,    0,    0,    0,    0,    0,    0,    0,    0,
+                       -50,  +50,  +30,  -30,  -10,  +10]}
 }
 
 # temperature scan data tags, exist for compatibility reasons
 ds_temp_scan_cosmics = ["LED_temp_scan_cosmics"]
 ds_temp_scan_led = ["LED_temp_scan"]
     
-def getfilelist(taglist): # argument can be a list of keys from the above dictionary or run numbers
+def getfilelist(taglist, filetype = "recoROOT"): # argument can be a list of keys from the above dictionary or run numbers
     filenamelist = []
     runnumlist = []
     configlist = []
@@ -123,7 +149,7 @@ def getfilelist(taglist): # argument can be a list of keys from the above dictio
             nFEBlist.append(None)
             print("WARNING: filepath.getfilelist: unable to recognize data tag:", tag)
     
-    fullfilelist = getfullfilelist("recoROOT")
+    fullfilelist = getfullfilelist(filetype)
     for runnumber in runnumlist:
         templist = []
         for file in fullfilelist:

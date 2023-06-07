@@ -127,11 +127,24 @@ geom_dict_crvaging007 = {
 }
 
 geom_dict_crvled001 = {
-    'tag'           : 'config_001_CRV_L_A',
+    'tag'           : 'config_LED001_CRV_L_A',
     'module'        : ['CRV_L_A_HORSTD'],
     'moduleOffsetX' : [0.],
     'moduleOffsetY' : [0.],
     'FEB'           : [[1,0]],
+    'nFEB'          : 2,
+    'badChannels'   : [],
+    'triggerOnlyChs': [],
+    'canvasSize'    : (8,2.4)
+}
+
+
+geom_dict_crvled002 = {
+    'tag'           : 'config_LED002_CRV_T_A',
+    'module'        : ['CRV_T_A_HORSTD'],
+    'moduleOffsetX' : [0.],
+    'moduleOffsetY' : [0.],
+    'FEB'           : [[0,1]],
     'nFEB'          : 2,
     'badChannels'   : [],
     'triggerOnlyChs': [],
@@ -143,4 +156,5 @@ setup_dict = {'crvaging-001': [geom_dict_crvaging001],
               'crvaging-004': [geom_dict_crvaging004],
               'crvaging-006': [geom_dict_crvaging006],
               'crvaging-007': [geom_dict_crvaging007],
-              'crvled-001'  : [geom_dict_crvled001]}
+              'crvled-001'  : [geom_dict_crvled001],
+              'crvled-002'  : [geom_dict_crvled002]}

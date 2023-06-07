@@ -1,5 +1,8 @@
 sampleRate = 12.55 #ns
 
+CRV_TDC_RATE = 159.324e6 # Hz
+RATE = (CRV_TDC_RATE/2.0)/1.0e9 # GHZ
+
 tDataTaking_cosmic = 120 #s
 tDataTransfer_cosmic = 60 #s
 timeDataSpill_cosmic = tDataTaking_cosmic + tDataTransfer_cosmic
@@ -7,6 +10,9 @@ timeDataSpill_cosmic = tDataTaking_cosmic + tDataTransfer_cosmic
 tDataTaking_led = 20 #s
 tDataTransfer_led = 220 #s
 timeDataSpill_led = tDataTaking_led + tDataTransfer_led
+
+numberOfPreSignalSamples = 60
+noiseThreshold = 5.0
 
 import matplotlib as plt
 cmap = plt.cm.get_cmap('tab10')

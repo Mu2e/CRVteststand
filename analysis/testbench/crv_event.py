@@ -16,6 +16,9 @@ import root_utils
 from root_utils import treeInitialization
 import pprint
 
+nPreSignalRegions = [[0]*geometry_constants.nChannelPerFEB for i in range(10)] # container
+nNoiseHits = [[0]*geometry_constants.nChannelPerFEB for i in range(10)] # container
+
 class crv_event:
     def __init__(self, runtree, iEntry, detailLevel = 0b1010, nFEB = 4, isRaw = False):
 
@@ -235,4 +238,431 @@ class crv_event:
                     
     #FIXME:
     # get nFEB from geometry_constants setup_dict / shape of TTree
+    
+    def FillPedestalHistogramsStock(self, pedestalHist):
+    # adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes
+        if self.adc == None:
+            sys.exit("ERROR: CRV_event: adc is not loaded")
+        for iFEB in range(self.nFEB):
+            for iCh in range(geometry_constants.nChannelPerFEB):
+                if np.isnan(tEvent.timeSinceSpill[iFEB][iCh]):
+                # missing FEB/channel in raw data
+                    continue
+                data = self.adc[iFEB][iCh]
+                if data[0]==0 and data[1]==0 and data[3]==0:
+                # FIXME temporary check for bad events
+                # where other channels work, so that timSinceSpill wasn't marked as NAN
+                    continue
+                # divide prespill region into three parts
+                # using only 1 region (i.e. don't devide the prespill region) returns a pedestal which is too high
+                numberOfRegions=3
+                for i in range(numberOfRegions):
+                    average = 0
+                    minADC = float('nan')
+                    maxADC = float('nan')
+                    for j in range(int(constants.numberOfPreSignalSamples/numberOfRegions)):
+                        tadc = data[i*int(constants.numberOfPreSignalSamples/numberOfRegions)+j]
+                        average += tadc
+                        if tadc < minADC or math.isnan(minADC):
+                            minADC = tadc
+                        if tadc > maxADC or math.isnan(maxADC):
+                            maxADC = tadc
+                        if maxADC-minADC > 5:
+                            continue
+                    average/=float(int(constants.numberOfPreSignalSamples/numberOfRegions))
+                    pedestalHist[iFEB][iCh].Fill(average)
+        return
+    
+    def FillPedestalHistogramsAllPts(self, pedestalHist):
+        if self.adc == None:
+            sys.exit("ERROR: CRV_event: adc is not loaded")
+        for iFEB in range(self.nFEB):
+            for iCh in range(geometry_constants.nChannelPerFEB):
+                if np.isnan(tEvent.timeSinceSpill[iFEB][iCh]):
+                # missing FEB/channel in raw data
+                    continue
+                data = self.adc[iFEB][iCh]
+                if data[0]==0 and data[1]==0 and data[3]==0:
+                # FIXME temporary check for bad events
+                # where other channels work, so that timSinceSpill wasn't marked as NAN
+                    continue
+                for i in range(constants.numberOfPreSignalSamples):
+                    pedestalHist[iFEB][iCh].Fill(data[i])
+        return
+'''
+    def FillCalibrationHistogramsStock(self, calibHist, all_pedestals):
+    # adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes
+        global nPreSignalRegions, nNoiseHits
+        if self.adc == None:
+            sys.exit("ERROR: CRV_event: adc is not loaded")
+        for iFEB in range(self.nFEB):
+            for iCh in range(geometry_constants.nChannelPerFEB):
+                if np.isnan(tEvent.timeSinceSpill[iFEB][iCh]):
+                # missing FEB/channel in raw data
+                    continue
+                data = self.adc[iFEB][iCh]
+                if data[0]==0 and data[1]==0 and data[3]==0:
+                # FIXME temporary check for bad events
+                # where other channels work, so that timSinceSpill wasn't marked as NAN
+                    continue
+                pedestal = all_pedestals[iFEB][iCh]
+                
+                # in the stock codes, example pulses were drawn, omitted here.
+                
+                nBins = constants.numberOfPreSignalSamples
+                # remove the pedestal and find the local maxima
+                waveform = []
+                peaks = []
+                # sum=0
+                for ibin in range(nBins):
+                    waveform.append(data[ibin]-pedestal)
+                    if ibin>1 and ibin<nBins-3: #don't search for peaks too close to the sample start or end
+                        if (data[ibin-1]<data[ibin] && data[ibin]>data[ibin+1] && data[ibin]-pedestal>constants.noiseThreshold):
+                            peaks.append((ibin,False))
+                        if (data[ibin-1]<data[ibin] && data[ibin]==data[ibin+1] && data[ibin+1]>data[ibin+2] && data[ibin]-pedestal>constants.noiseThreshold):
+                            peaks.append((ibin,True))
+                    # sum += math.fabs(data[ibin]-pedestal)
+                # don't use noisy events  # doesn't seem to do much
+                # if(float(sum)/float(nBins)>1.0):
+                    # return  //FIXME
+                    
+                nPreSignalRegions[iFEB][iCh] += 1
+                nNoiseHits[iFEB][iCh] += len(peaks)
+                
+                # fit all peaks
+                for i in range(len(peaks)):
+                    # select a range of up to 4 points before and after the maximum point
+                    # -find up to 5 points before and after the maximum point for which the waveform is stricly decreasing
+                    # -remove 1 point on each side. this removes potentially "bad points" belonging to a second pulse (i.e. in double pulses) 
+                    maxBin = peaks[i][0]
+                    startBin = maxBin
+                    endBin = maxBin
+                    for ibin in range(maxBin-1, max(-1, maxBin-5-1), -1):
+                        if waveform[ibin]<=wavform[ibin+1]:
+                            startBin = ibin
+                        else:
+                            break
+                    for ibin in range(maxBin+1, min(nBins, maxBin+5+1)):
+                        if waveform[ibin]<=wavform[ibin-1]:
+                            endBin = ibin
+                        else:
+                            break
+                    if maxBin - startBin > 1:
+                        startBin += 1
+                    if endBin - maxBin > 1:
+                        endBin -= 1
+                        
+                    # fill the graph
+                    binWidth = 1.0/constants.RATE
+                    t = [ibin*binWidth for ibin in range(startBin, endBin+1)]
+                    v = waveform[startBin:(endBin+1)]
+                    g = ROOT.TGraph(len(t), array('d', t), array('d', v))
+                    
+                    # set the fit function
+                    f = ROOT.TF1("peakfinder","[0]*(TMath::Exp(-(x-[1])/[2]-TMath::Exp(-(x-[1])/[2])))")
+                    f.SetParameter(0, waveform[maxBin]*ROOT.TMath.E())
+                    f.SetParameter(1, (maxBin+0.5)*binWidth if peaks[i][1] else maxBin*binWidth)
+                    f.SetParameter(2, 12.6)
+                    
+                    # do the fit
+                    fr = g.Fit(f,"QS" if (_draw1PE[index] or _draw2PE[index]) else "NQS")
 
+                    
+                    
+                    
+                    
+                    
+        //do the fit
+        TFitResultPtr fr = g.Fit(&f,(_draw1PE[index]||_draw2PE[index])?"QS":"NQS");
+
+        if(!fr->IsValid()) continue;
+        if(fr->Parameter(0)<=0 || fr->Parameter(2)<4) continue; //probably misreconstructed
+        if(fr->Parameter(2)>25) continue;  //probably not a noise hit
+        if(fabs(fr->Parameter(1)-maxBin*binWidth)>30) continue;
+        if(fr->Parameter(0)/(waveform[maxBin]*TMath::E())>1.5) continue;
+
+        double pulseArea = fr->Parameter(0)*fr->Parameter(2);
+        _calibVector[0][index]._calibrationHist->Fill(pulseArea);
+
+        //temperature correction of noise pulse areai
+        if(_temperature[index]!=0)
+        {
+          pulseArea*=(_calibTemperatureIntercept-_referenceTemperature)/(_calibTemperatureIntercept-_temperature[index]);
+          _calibVector[1][index]._calibrationHist->Fill(pulseArea);
+        }
+
+        if(_draw1PE[index] && waveform[maxBin]<17)
+        {
+          TVirtualPad *p=gPad;
+          gPad->cd(1);
+          g.SetTitle("Example of a 1PE dark noise pulse; Time [ns]; ADC   ");
+          g.SetMarkerStyle(20);
+          g.SetMarkerColor(kBlack);
+          g.GetHistogram()->GetXaxis()->SetTitleSize(0.05);
+          g.GetHistogram()->GetXaxis()->SetLabelSize(0.05);
+          g.GetHistogram()->GetYaxis()->SetTitleSize(0.05);
+          g.GetHistogram()->GetYaxis()->SetLabelSize(0.05);
+          g.GetHistogram()->GetYaxis()->SetTitleOffset(-0.6);
+          g.DrawClone("AP");
+          f.SetLineColor(kRed);
+          f.DrawCopy("same");
+          _draw1PE[index]=false;
+          p->cd();
+        }
+        if(_draw2PE[index] && waveform[maxBin]>24 && waveform[maxBin]<36)
+        {
+          TVirtualPad *p=gPad;
+          gPad->cd(2);
+          g.SetTitle("Example of a 2PE dark noise pulse; Time [ns]; ADC   ");
+          g.SetMarkerStyle(20);
+          g.SetMarkerColor(kBlack);
+          g.GetHistogram()->GetXaxis()->SetTitleSize(0.05);
+          g.GetHistogram()->GetXaxis()->SetLabelSize(0.05);
+          g.GetHistogram()->GetYaxis()->SetTitleSize(0.05);
+          g.GetHistogram()->GetYaxis()->SetLabelSize(0.05);
+          g.GetHistogram()->GetYaxis()->SetTitleOffset(-0.6);
+          g.DrawClone("AP");
+          f.SetLineColor(kRed);
+          f.DrawCopy("same");
+          _draw2PE[index]=false;
+          p->cd();
+        }
+      }//peaks
+
+      //fill temperature plot
+      if(_temperature[index]!=0 && _lastSpillIndex[index]!=_spillIndex)
+      {
+        _temperatureHist[index]->SetPoint(_temperatureHist[index]->GetN(),_spillIndex,_temperature[index]);
+        _lastSpillIndex[index]=_spillIndex;
+      }
+
+    }//channel
+  }//feb
+}
+
+
+'''
+
+
+
+    
+def CalculatePedestalStock(nFEB, pedestalHist, canvas = None):
+# adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes
+    pedestals = [[None]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    noiseStdDev = [[None]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    funcPedestal = [[None]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    for iFEB in range(nFEB):
+        for iCh in range(geometry_constants.nChannelPerFEB):
+            if canvas:
+                canvas[iFEB][iCh].cd(1)
+                gPad.cd(1)
+                pedestalHist[iFEB][iCh].SetLineColor(1) # kblack
+                pedestalHist[iFEB][iCh].DrawClone()
+                
+            pedestals[iFEB][iCh] = 0.
+            if pedestalHist[iFEB][iCh].GetEntries()<200:
+                continue
+            n = pedestalHist[iFEB][iCh].GetNbinsX()
+            overflow = pedestalHist[iFEB][iCh].GetBinContent(0)+pedestalHist[iFEB][iCh].GetBinContent(n+1)
+            if overflow/float(pedestalHist[iFEB][iCh].GetEntries())>0.1:
+                continue
+                
+            maxbinPedestal = pedestalHist[iFEB][iCh].GetMaximumBin()   
+            peakPedestal = pedestalHist[iFEB][iCh].GetBinCenter(maxbinPedestal)
+            funcPedestal[iFEB][iCh] = ROOT.TF1("f_stock_%i_%i"%(iFEB,iCh), "gaus", peakPedestal-4, peakPedestal+4)
+            funcPedestal[iFEB][iCh].SetLineWidth(1)
+            funcPedestal[iFEB][iCh].SetLineColor(2) # kRed
+            pedestalHist[iFEB][iCh].Fit(funcPedestal[iFEB][iCh], "QR")
+            if canvas:
+                funcPedestal[iFEB][iCh].DrawClone("SAME")
+            pedestals[iFEB][iCh] = funcPedestal[iFEB][iCh].GetParameter(1)
+            noiseStdDev[iFEB][iCh] = pedestalHist[iFEB][iCh].GetStdDev()
+            
+            if canvas:
+                t1 = ROOT.TPaveText(.15, .7, .50, .8, "NDC")
+                t1.SetFillColor(0);
+                t1.AddText("Pedestal = %.2f", pedestals[iFEB][iCh])
+                t1.AddText("Noise StdDev = %.2f", noiseStdDev[iFEB][iCh])
+                t1.SetTextAlign(12)
+                t1.DrawClone("SAME")
+
+    return pedestals, noiseStdDev, funcPedestal
+'''          
+def CalculateCalibrationConstantsStock(nFEB, calibHist, canvas = None, nPEpeaksToFit):
+# adaption of calibCrv::CrvEvent::CalculateCalibrationConstants for testing purposes
+    for iFEB in range(nFEB):
+        for iCh in range(geometry_constants.nChannelPerFEB):
+
+
+            
+            
+      if(_temperatureHist[index]->GetN()>0)
+      {
+        _canvas[index]->cd(2);
+        gPad->cd(1);
+        _temperatureHist[index]->Draw("AP");
+      }
+
+      _deadChannels[index]=false;
+      _noPedestal[index]=false;
+
+      if(isnan(_pedestals[index]))
+      {
+        _noPedestal[index]=true;
+        _canvas[index]->Print(pdfFileName.c_str(), "pdf");
+        continue;
+      }
+
+      if(_calibVector[0][index]._calibrationHist->GetEntries()<200)
+      {
+        _deadChannels[index]=true;
+        _canvas[index]->Print(pdfFileName.c_str(), "pdf");
+        continue;
+      }
+
+      for(int k=0; k<2; ++k) //k=0: no temperature correction, k=1: temperature correction
+      {
+        calibStruct &CS =_calibVector[k][index];
+        CS._noCalibration=true;
+        CS._nPEpeaks=0;
+        CS._noiseRate=0;
+        CS._xtalkProbability=0;
+        CS._calibrationConstant=0;
+
+        if(k==1 && _calibVector[k][index]._calibrationHist->GetEntries()<200)
+        {
+          CS._noCalibration=true;
+          _canvas[index]->Print(pdfFileName.c_str(), "pdf");
+          continue;
+        }
+
+        //Calibration plot
+        _canvas[index]->cd(k+3);
+        gPad->SetLogy();
+        CS._calibrationHist->SetLineColor(kBlue);
+        CS._calibrationHist->DrawClone("");
+
+        int maxbin = 0;
+        double maxbinContent = 0;
+        for(int bin=1; bin<CS._calibrationHist->GetNbinsX(); bin++)
+        {
+          if(CS._calibrationHist->GetBinCenter(bin)<250) continue;   //find 1PE maximum only between 350 and 1100
+          if(CS._calibrationHist->GetBinCenter(bin)>1500) break;     //1100
+          double binContent = CS._calibrationHist->GetBinContent(bin);
+          if(binContent>maxbinContent)
+          {
+            maxbin=bin;
+            maxbinContent=binContent;
+          }
+        }
+
+        double peak1PE = CS._calibrationHist->GetBinCenter(maxbin);
+        TF1 func1("f1", "gaus",peak1PE*0.8,peak1PE*1.2);
+        func1.SetParameter(1,peak1PE);
+        func1.SetLineWidth(1);
+        func1.SetLineColor(kRed);
+        CS._calibrationHist->Fit(&func1, "QR");
+        peak1PE = func1.GetParameter(1);
+
+        std::vector<double> peaks;
+        if(peak1PE>200.0 && peak1PE<1800.0)
+        {
+          peaks.push_back(peak1PE);
+          func1.DrawClone("same");
+          for(int iPeak=2; iPeak<=nPEpeaksToFit; ++iPeak)
+          {
+            double peakTmp = iPeak*peak1PE;
+            double rangeStart = peakTmp-0.35*peak1PE;
+            double rangeEnd = peakTmp+0.35*peak1PE;
+            if(rangeEnd>CS._calibrationHist->GetXaxis()->GetXmax()) break;
+            if(CS._calibrationHist->Integral(CS._calibrationHist->FindFixBin(rangeStart),CS._calibrationHist->FindFixBin(rangeEnd))<50) break;
+            TF1 func2(Form("f%i",iPeak), "gaus",rangeStart,rangeEnd);
+            func2.SetParameter(1,peakTmp);
+            func2.SetLineWidth(1);
+            func2.SetLineColor(kRed);
+            if((int)CS._calibrationHist->Fit(&func2, "QR")!=0) break;
+            peakTmp = func2.GetParameter(1);
+            if(peakTmp/peak1PE>iPeak*0.95 && peakTmp/peak1PE<iPeak*1.05)
+            {
+              peaks.push_back(peakTmp);
+              func2.DrawClone("same");
+            }
+            else break;
+          }
+        }
+        CS._nPEpeaks=peaks.size();
+
+        TPaveText t2(.50, .65, .89, .89, "NDC");
+        t2.SetFillColor(0);
+        for(size_t iPeak=0; iPeak<peaks.size(); ++iPeak)
+        {
+          t2.AddText(Form("%luPE = %4.0lf ADC*ns", iPeak+1,peaks[iPeak]));
+        }
+
+        if(k==1)
+        {
+          t2.AddText("Temperature corrected values");
+          t2.AddText(Form("refT %.1f deg C, calibT0 %.1f deg C",_referenceTemperature,_calibTemperatureIntercept));
+        }
+
+        if(peaks.empty())
+        {
+          t2.DrawClone("SAME");
+          if(k==1) _canvas[index]->Print(pdfFileName.c_str(), "pdf");
+          continue;
+        }
+
+        //cross-talk and noise
+        double events1PEandMore=0;
+        double events2PEandMore=0;
+        for(int bin=1; bin<CS._calibrationHist->GetNbinsX(); bin++)
+        {
+          double area = CS._calibrationHist->GetBinCenter(bin);
+          double binContent = CS._calibrationHist->GetBinContent(bin);
+          if(area>0.5*peak1PE) events1PEandMore+=binContent;
+          if(area>1.5*peak1PE) events2PEandMore+=binContent;
+        }
+
+        CS._noiseRate=events1PEandMore/(_nPreSignalRegions[index]*_numberOfPreSignalSamples/(RATE*1e9));
+        CS._xtalkProbability=events2PEandMore/events1PEandMore;
+        t2.AddText(Form("Noise rate = %4.2lf MHz", CS._noiseRate/1.0e6));
+        t2.AddText(Form("Xtalk prob. = %4.2lf", CS._xtalkProbability));
+        t2.DrawClone("SAME");
+
+        //Fit plot to determine calibration constants
+        _canvas[index]->cd(2);  //pad for temperature and calib fits
+        gPad->cd(2);  //pad for both calib fits
+        gPad->cd(k+1);  //non-temperature corrected and temperature corrected calib fits
+        gPad->SetLogy(0);
+
+        TGraph *graph=new TGraph();
+        graph->SetPoint(0,0,0);
+        for(size_t iPeak=0; iPeak<peaks.size(); ++iPeak) graph->SetPoint(iPeak+1,iPeak+1,peaks[iPeak]);
+        if(k==0) graph->SetTitle(Form("FEB%i Ch%i Calib. Fit; n PE peak; Area [ADC*ns]",i,j));
+        else graph->SetTitle(Form("FEB%i Ch%i Temp. corrected calib fit; n PE peak; Area [ADC*ns]",i,j));
+        graph->GetXaxis()->SetRangeUser(0, peaks.size()+0.5);
+        graph->GetYaxis()->SetRangeUser(0, peaks[0]*(peaks.size()+0.5));
+        graph->SetMarkerStyle(20);
+        graph->SetMarkerColor(kBlack);
+        graph->Draw("AP");
+
+        TF1 funcFit("calibration","[0]*x", -0.5, peaks.size()+0.5);
+        funcFit.SetLineColor(kRed);
+        graph->Fit(&funcFit, "QR");
+        funcFit.DrawClone("SAME");
+        CS._calibrationConstant = funcFit.GetParameter(0);
+
+        TPaveText t3(.15, .65, .7, .88, "NDC");
+        t3.SetLineColorAlpha(0,0);
+        t3.SetFillStyle(0);
+        t3.AddText("Calibration constant");
+        t3.AddText(Form("%.0lf ADC*ns/PE", CS._calibrationConstant));
+        t3.SetTextAlign(12);
+        t3.DrawClone("SAME");
+
+        if(k==1) _canvas[index]->Print(pdfFileName.c_str(), "pdf");
+      }
+    }
+  }
+}
+'''
