@@ -317,6 +317,8 @@ class CrvEvent
   float _calibTemperatureIntercept;
 
   std::string _runNumber;
+  int _run;
+  int _subrun;
   int _numberOfFebs;
   int _channelsPerFeb;
   int _numberOfSamples;
@@ -395,6 +397,8 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
   _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
 
+  tree->SetBranchAddress("runtree_run_num", &_run);
+  tree->SetBranchAddress("runtree_subrun_num", &_subrun);
   tree->SetBranchAddress("runtree_spill_index", &_spillIndex);
   tree->SetBranchAddress("runtree_spill_num", &_spillNumber);
   tree->SetBranchAddress("runtree_event_num",&_eventNumber);
@@ -426,6 +430,8 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _recoStartBinReflectedPulse            = new int[_numberOfFebs*_channelsPerFeb];
   _recoEndBinReflectedPulse              = new int[_numberOfFebs*_channelsPerFeb];
 
+  recoTree->Branch("runNumber", &_run, "runNumber/I");
+  recoTree->Branch("subrunNumber", &_subrun, "subrunNumber/I");
   recoTree->Branch("spillIndex", &_spillIndex, "spillIndex/I");
   recoTree->Branch("spillNumber", &_spillNumber, "spillNumber/I");
   recoTree->Branch("boardStatus", _boardStatus, Form("boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
@@ -723,17 +729,13 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   int   nEventsExpected;
   int   nEventsActual;
   bool  spillStored;
+  bool  timestampFound=false;
   int  *boardStatus = new int[numberOfFebs*BOARD_STATUS_REGISTERS];
   treeSpills->SetBranchAddress("spill_nevents", &nEventsExpected);
   treeSpills->SetBranchAddress("spill_neventsActual", &nEventsActual);
   treeSpills->SetBranchAddress("spill_stored", &spillStored);
   treeSpills->SetBranchAddress("spill_boardStatus", boardStatus);
   treeSpills->SetBranchAddress("spill_timestamp", &timestampTmp);
-
-  treeSpills->GetEntry(0);
-  timestamp=timestampTmp;  //to get the time stamp of the first spill, that gets overwritten at the next GetEntry calls
-  long timestampL=timestamp;  //long required below
-  txtFile<<"timestamp: "<<ctime(&timestampL);
 
   int nEventsExpectedTotal=0;   //of the spills that were stored
   int nEventsActualTotal=0;
@@ -760,6 +762,13 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   for(int iSpill=0; iSpill<nSpillsExpected; ++iSpill)
   {
     treeSpills->GetEntry(iSpill);
+    if(timestampTmp!=0 && !timestampFound)  //the first spill may not have a time stamp
+    {
+      timestampFound=true;
+      timestamp=timestampTmp;  //to get the time stamp, that gets overwritten at the next GetEntry calls
+      long timestampL=timestamp;  //long required below
+      txtFile<<"timestamp: "<<ctime(&timestampL);
+    }
 
     if(spillStored)
     {
@@ -838,7 +847,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 
 void StorePEyields(const std::string &runNumber, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
                    const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2],
-                   const std::vector<float> &meanTemperatures, TTree *treeSpills, int nEventsActual, const Calibration &calib)
+                   const std::vector<float> &meanTemperatures, const std::vector<float> &stddevTemperatures, TTree *treeSpills, int nEventsActual, const Calibration &calib)
 {
   std::ifstream settingsFile;
   settingsFile.open("config.txt");
@@ -873,6 +882,7 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   float *signalsSummary = const_cast<float*>(signals[0].data());
   float *signalsTSummary = const_cast<float*>(signals[1].data());
   float *meanTemperaturesSummary = const_cast<float*>(meanTemperatures.data());
+  float *stddevTemperaturesSummary = const_cast<float*>(stddevTemperatures.data());
   float *pedestals = const_cast<float*>(calib.GetPedestals().data());
   float *calibConstants = const_cast<float*>(calib.GetCalibrationFactors().data());
   float *calibConstantsT = const_cast<float*>(calib.GetCalibrationFactorsTemperatureCorrected().data());
@@ -897,6 +907,7 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   recoTreeSummary->Branch("signals", signalsSummary, Form("signals[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("signalsTemperatureCorrected", signalsTSummary, Form("signalsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("meanTemperatures", meanTemperaturesSummary, Form("meanTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("stddevTemperatures", stddevTemperaturesSummary, Form("stddevTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("pedestals", pedestals, Form("pedestals[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("calibConstants", calibConstants, Form("calibConstants[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("calibConstantsTemperatureCorrected", calibConstantsT, Form("calibConstantsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
@@ -1214,6 +1225,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   std::vector<float> fwhms[2];
   std::vector<float> signals[2];
   std::vector<float> meanTemperatures;
+  std::vector<float> stddevTemperatures;
   for(int feb=0; feb<numberOfFebs; feb++)
   {
     for(int channel=0; channel<channelsPerFeb; channel++)
@@ -1223,6 +1235,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
       for(int i=0; i<2; ++i)
       {
         event.GetCanvas(feb, channel)->cd(i+1);
+        gPad->SetLogy(1);
         h[i]=event.GetHistPEs(i,feb,channel);
 //        h[i]->Draw();
 
@@ -1234,7 +1247,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         mpvs[i].push_back(mpv);
         fwhms[i].push_back(fwhm);
         signals[i].push_back(nsignals);
-        h[i]->GetXaxis()->SetRange(15,150);
+//        h[i]->GetXaxis()->SetRange(15,150);
         h[i]->Draw();
 
         t[i]=new TPaveText(0.65,0.65,0.85,0.75,"NDC");
@@ -1262,15 +1275,20 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         event.GetCanvas(feb, channel)->cd(4);
         g->Draw("AP");
         meanTemperatures.push_back(g->GetMean(2));
+        stddevTemperatures.push_back(g->GetRMS(2));
       }
-      else meanTemperatures.push_back(0);
+      else
+      {
+        meanTemperatures.push_back(0);
+        stddevTemperatures.push_back(0);
+      }
 
       event.GetCanvas(feb,channel)->Update();
       event.GetCanvas(feb,channel)->Print(pdfFileName.c_str(), "pdf");
     }
   }
 
-  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, meanTemperatures, treeSpills, nEvents, calib);
+  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, meanTemperatures, stddevTemperatures, treeSpills, nEvents, calib);
 
   Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms);
 

@@ -11,6 +11,7 @@
 # include "TTree.h"
 # include "TFile.h"
 
+const int CHANNEL_PER_FEB=64;
 const int CHANNEL_PER_FPGA=16;
 const double CRV_TDC_RATE = 159.324e6;  // Hz
 const int BOARD_STATUS_REGISTERS=22;
@@ -20,7 +21,6 @@ struct Event
   bool                                              _badEvent;
   std::map<std::pair<int,int> ,long>                _tdcSinceSpill;  //TDC for every FEB/channel pair
   std::map<std::pair<int,int>, std::vector<short> > _adc;            //ADC samples for every FEB/channel pair
-  std::map<std::pair<int,int>, float>               _temperature;    //CMB temperature
 
   Event() : _badEvent(false) {}
 };
@@ -58,6 +58,7 @@ class EventTree
   int    _channelsPerFeb;
   int    _numberOfSamples;
   size_t _nEvents;  //from spill header
+  int    _nFPGAs;   //from word count in spill header
   int    _run;
   int    _subrun;
   int    _spillIndex; //increased for every spill
@@ -72,7 +73,8 @@ class EventTree
   long   *_tdcSinceSpill;
   double *_timeSinceSpill;
   short  *_adc;
-  float  *_temperature;
+  float  *_biasVoltage; //for each channel
+  float  *_temperature; //CMB temperature for each channel
 
   EventTree();
   void PrepareTree();
@@ -80,8 +82,8 @@ class EventTree
   bool ReadSpillHeader();
   bool ReadEventHeaderStart();
   bool ReadEventHeader(int &eventNumber, long &tdcSinceSpill, size_t &dataSize, bool missingBytes);
-  bool ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes);
-  bool ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD_STATUS_REGISTERS]);
+  bool ReadEvent(Event &theEvent, long tdcSinceSpill, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes);
+  bool ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatureTmp[CHANNEL_PER_FEB], int boardStatus[BOARD_STATUS_REGISTERS]);
 };
 
 EventTree::EventTree(const std::string &runNumber, const std::string &inFileName, const std::string &outFileName,
@@ -126,6 +128,7 @@ EventTree::EventTree(const std::string &runNumber, const std::string &inFileName
   _tdcSinceSpill  = new long[_numberOfFebs*_channelsPerFeb];
   _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
   _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
+  _biasVoltage    = new float[_numberOfFebs*_channelsPerFeb];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
 
   size_t underscorePos = runNumber.rfind('_');
@@ -153,6 +156,7 @@ void EventTree::Clear()
   {
     _tdcSinceSpill[i]=0;
     _timeSinceSpill[i]=0;
+    _biasVoltage[i]=0;
     _temperature[i]=0;
   }
   for(int i=0; i<_numberOfFebs*_channelsPerFeb*_numberOfSamples; i++) _adc[i]=0;
@@ -164,17 +168,21 @@ EventTree::~EventTree()
   delete [] _tdcSinceSpill;
   delete [] _timeSinceSpill;
   delete [] _adc;
+  delete [] _biasVoltage;
   delete [] _temperature;
 }
 
 void EventTree::PrepareTree()
 {
+  _tree->Branch("runtree_run_num", &_run, "runtree_run_num/I");
+  _tree->Branch("runtree_subrun_num", &_subrun, "runtree_subrun_num/I");
   _tree->Branch("runtree_spill_index", &_spillIndex, "runtree_spill_index/I");
   _tree->Branch("runtree_spill_num", &_spillNumber, "runtree_spill_num/I");
   _tree->Branch("runtree_event_num", &_eventNumber, "runtree_event_num/I");
   _tree->Branch("runtree_tdc_since_spill", _tdcSinceSpill, Form("runtree_tdc_since_spill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_time_since_spill", _timeSinceSpill, Form("runtree_time_since_spill[%i][%i]/D",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_adc", _adc, Form("runtree_adc[%i][%i][%i]/S",_numberOfFebs,_channelsPerFeb,_numberOfSamples));
+  _tree->Branch("runtree_biasVoltage", _biasVoltage, Form("runtree_biasVoltage[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_temperature", _temperature, Form("runtree_temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_boardStatus", _boardStatus, Form("runtree_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
   _tree->Branch("runtree_spillTimestamp", &_timestamp,"runtree_spillTimestamp/L");
@@ -189,6 +197,8 @@ void EventTree::PrepareTree()
   _treeSpills->Branch("spill_number_of_febs", &_numberOfFebs, "spill_number_of_febs/I");
   _treeSpills->Branch("spill_channels_per_feb", &_channelsPerFeb, "spill_channels_per_feb/I");
   _treeSpills->Branch("spill_number_of_samples", &_numberOfSamples, "spill_number_of_samples/I");
+  _treeSpills->Branch("spill_biasVoltage", _biasVoltage, Form("spill_biasVoltage[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
+  _treeSpills->Branch("spill_temperature", _temperature, Form("spill_temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _treeSpills->Branch("spill_boardStatus", _boardStatus, Form("spill_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
   _treeSpills->Branch("spill_timestamp", &_timestamp,"spill_timestamp/L");
   _treeSpills->Branch("spill_timestamp_sec", &_timestampStruct.tm_sec);
@@ -254,7 +264,22 @@ bool EventTree::ReadSpillHeader()
 
   _spillNumber=buffer.at(9)+256*buffer.at(8);
   _nEvents=buffer.at(7)+256*buffer.at(6)+256*256*buffer.at(5)+256*256*256*buffer.at(4);
-//std::cout<<"Spill#, number of events "<<_spillNumber<<"  "<<_nEvents<<std::endl;
+  int wordCount=buffer.at(3)+256*buffer.at(2)+256*256*buffer.at(1)+256*256*256*buffer.at(0);
+  if(_nEvents>0)
+  {
+    if((wordCount-8)%((16*128+8)*_nEvents)==0) _nFPGAs=(wordCount-8)/((16*128+8)*_nEvents);
+    else
+    {
+      std::cout<<"spill header word count "<<wordCount<<" doesn't match the number of events "<<_nEvents<<std::endl;
+      _nFPGAs=4;
+    }
+  }
+  else
+  {
+    std::cout<<"spill header indicates 0 events"<<std::endl;
+    _nFPGAs=4;
+  }
+//std::cout<<"Spill# "<<_spillNumber<<"    number of events "<<_nEvents<<"    word count "<<wordCount<<"   nFPGAs "<<_nFPGAs<<std::endl;
 
   return true;
 }
@@ -287,8 +312,7 @@ bool EventTree::ReadEventHeader(int &eventNumber, long &tdcSinceSpill, size_t &d
   return true;
 }
 
-bool EventTree::ReadEvent(Event &theEvent, long tdcSinceSpill, const std::vector<float> &temperatures, 
-                          int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes)
+bool EventTree::ReadEvent(Event &theEvent, long tdcSinceSpill, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes)
 {
   //get the data block for this event and channel
   std::vector<unsigned> buffer(dataSize*2);
@@ -324,7 +348,6 @@ if(theEvent._badEvent) std::cout<<"bad Event at FEB "<<feb<<" ch "<<channel<<std
     adcSamples.push_back(adcSample);
 //std::cout<<"ADCsample "<<i<<"  "<<adcSample<<std::endl;
   } 
-  theEvent._temperature[std::pair<int,int>(feb,channel)]=temperatures[channel];
 
   if(checkMissingBytes && buffer.at(dataSize*2-2)==8 && buffer.at(dataSize*2-1)==8)   //at last channel of an FPGA
   {
@@ -340,7 +363,7 @@ std::cout<<"missingBytes FEB/ch "<<feb<<"  "<<channel<<std::endl;
   return true;
 }
 
-bool EventTree::ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD_STATUS_REGISTERS])
+bool EventTree::ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatureTmp[CHANNEL_PER_FEB], int boardStatus[BOARD_STATUS_REGISTERS])
 {
   std::string line;
   std::vector<unsigned> buffer(16);
@@ -367,6 +390,11 @@ bool EventTree::ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD
   _binary=binaryTmp;
   for(int i=0; i<6; ++i) boardStatus[i+16]=buffer[i];
 
+  for(int iAFE=0; iAFE<8; ++iAFE)
+  {
+     for(int i=0; i<8; ++i) biasVoltageTmp[iAFE*8+i]=boardStatus[11+iAFE]*0.02;
+  }
+
   if(!getline(_inFile, line)) return false;  //seems to be needed to get to the end of the line
 
   //FPGA blocks
@@ -381,7 +409,7 @@ bool EventTree::ReadStab(std::vector<float> &temperatures, int boardStatus[BOARD
     _binary=binaryTmp;
     for(int iCMB=0; iCMB<4; ++iCMB)
     {
-      for(int i=0; i<4; ++i) temperatures[16*iFPGA+4*iCMB+i]=buffer[8+iCMB]*0.062;
+      for(int i=0; i<4; ++i) temperatureTmp[16*iFPGA+4*iCMB+i]=buffer[8+iCMB]*0.062;
     }
 
     if(!getline(_inFile, line)) return false;  //for EOL at 2nd line
@@ -446,18 +474,22 @@ void EventTree::ReadSpill()
     }
 
     //Check whether there is stab data in the file
-    std::vector<float> CMBtemperatures;
-    CMBtemperatures.resize(64);  //stabs always contain the temperatures of all 4 FPGAs (i.e. all 64 channels)
-    int boardStatusTmp[BOARD_STATUS_REGISTERS];
+    //We don't know yet, what FEB number it is. That's why we have to use temporary variables
+    //stabs always contain the temperatures and bias voltages of all 4 FPGAs (i.e. all 64 channels)
+    float biasVoltageTmp[CHANNEL_PER_FEB];
+    float temperatureTmp[CHANNEL_PER_FEB];
+    int   boardStatusTmp[BOARD_STATUS_REGISTERS];
+    bool  foundStab=false;
     if(line.find("stab")<2)
     {
-      if(!ReadStab(CMBtemperatures,boardStatusTmp))
+      if(!ReadStab(biasVoltageTmp,temperatureTmp,boardStatusTmp))
       {
         std::cout<<"incomplete stabs. skipping this FEB."<<std::endl;
         _missingFebs=true;
         continue;
       }
       if(!getline(_inFile, line)) return;
+      foundStab=true;
     }
 
     //FEB numbers start at 0 in new files and start at 1 in older files
@@ -481,9 +513,18 @@ void EventTree::ReadSpill()
     feb=newfeb;
     std::cout<<"Reading feb "<<feb<<std::endl;
 
-    for(int iRegister=0; iRegister<BOARD_STATUS_REGISTERS; ++iRegister)
+    if(foundStab)
     {
-      _boardStatus[feb*BOARD_STATUS_REGISTERS+iRegister]=boardStatusTmp[iRegister];
+      for(int iChannel=0; iChannel<_channelsPerFeb; ++iChannel)
+      {
+        int indexChannel=feb*_channelsPerFeb+iChannel;
+        _temperature[indexChannel]=temperatureTmp[iChannel];
+        _biasVoltage[indexChannel]=biasVoltageTmp[iChannel];
+      }
+      for(int iRegister=0; iRegister<BOARD_STATUS_REGISTERS; ++iRegister)
+      {
+        _boardStatus[feb*BOARD_STATUS_REGISTERS+iRegister]=boardStatusTmp[iRegister];
+      }
     }
 
     //in the spill for the current FEB. reading the events for all channels of this FEB now
@@ -518,7 +559,7 @@ void EventTree::ReadSpill()
       {
 //std::cout<<"EVENT  "<<feb<<"  "<<eventNumber<<"  "<<channelInFpga<<"  "<<dataSize<<"  "<<tdcSinceSpill<<"         "<<_spill.size()<<std::endl;
         bool checkMissingBytes=(channelInFpga==CHANNEL_PER_FPGA-1);
-        if(!ReadEvent(theEvent, tdcSinceSpill, CMBtemperatures, feb, dataSize, checkMissingBytes, missingBytes))
+        if(!ReadEvent(theEvent, tdcSinceSpill, feb, dataSize, checkMissingBytes, missingBytes))
         {
           std::cout<<"Event "<<eventNumber<<" at FEB "<<feb<<" cannot be read. ";
           std::cout<<"Skipping event. May not be able to recover this spill."<<std::endl;
@@ -582,7 +623,8 @@ void EventTree::FillSpill()
     Event &theEvent = event->second;
     for(int feb=0; feb<_numberOfFebs; feb++)
     {
-      for(int channel=0; channel<_channelsPerFeb; channel++)
+      for(int channel=0; channel<16*_nFPGAs; channel++)
+//      for(int channel=0; channel<_channelsPerFeb; channel++)
       {
         if(theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel))==theEvent._tdcSinceSpill.end()) 
         {
@@ -627,7 +669,8 @@ void EventTree::FillSpill()
 
     for(int feb=0; feb<_numberOfFebs; feb++)
     {
-      for(int channel=0; channel<_channelsPerFeb; channel++)
+      for(int channel=0; channel<16*_nFPGAs; channel++)
+//      for(int channel=0; channel<_channelsPerFeb; channel++)
       {
         int indexTDC=feb*_channelsPerFeb+channel;
         std::map<std::pair<int,int>, long>::const_iterator iterTDC=theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel));
@@ -654,13 +697,6 @@ void EventTree::FillSpill()
             int index=feb*_channelsPerFeb*_numberOfSamples+channel*_numberOfSamples+sample;
             _adc[index]=iterADC->second.at(sample); //_adc[feb][channel][sample];
           }
-        }
-
-        int indexTemperature=feb*_channelsPerFeb+channel;
-        std::map<std::pair<int,int>, float>::const_iterator iterTemperature=theEvent._temperature.find(std::pair<int,int>(feb,channel));
-        if(iterTemperature!=theEvent._temperature.end()) 
-        {
-          _temperature[indexTemperature]=iterTemperature->second; //_temperature[feb][channel];
         }
       }//channels
     }//febs
