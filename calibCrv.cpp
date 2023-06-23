@@ -39,9 +39,9 @@ const double RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
 class CrvEvent
 {
   public:
-  CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree);
+  CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples);
   void     FillPedestalHistograms(int entry);
-  void     CalculatePedestal();
+  void     CalculatePedestal(double pedestalCorrection);
   void     FillCalibrationHistograms(int entry);
   void     CalculateCalibrationConstants(const std::string &pdfFileName, int nPEpeaksToFit);
   void     StorePedestalAndCalibrationConstants(std::ofstream &calibFile);
@@ -93,8 +93,8 @@ class CrvEvent
   std::vector<calibStruct> _calibVector[2];
 
 };
-CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree) :
-                   _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _tree(tree)
+CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples) :
+                   _numberOfPreSignalSamples(preSignalSamples), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _tree(tree)
 {
   std::ifstream configFile;
   configFile.open("config.txt");
@@ -106,7 +106,6 @@ CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int n
   std::string configKey, configValue;
   while(configFile>>configKey>>configValue)
   {
-    if(configKey=="preSignalSamples") _numberOfPreSignalSamples=atoi(configValue.c_str());
     if(configKey=="calibNoiseThreshold") _noiseThreshold=atof(configValue.c_str());
     if(configKey=="calibTemperatureIntercept") _calibTemperatureIntercept=atof(configValue.c_str());
     if(configKey=="referenceTemperature") _referenceTemperature=atof(configValue.c_str());
@@ -158,7 +157,7 @@ CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int n
       gPad->SetLogy(0);
       gPad->Divide(1,2);  //calib fit and temperature corrected calib fit
 
-      _pedestalHist[index]=new TH1F(Form("FEB%i Chan%i ped", i, j), Form("FEB%i Chan%i Pedestal; ADC; Counts", i, j), 1000, -50, 50);
+      _pedestalHist[index]=new TH1F(Form("FEB%i Chan%i ped", i, j), Form("FEB%i Chan%i Pedestal; ADC; Counts", i, j), 1001, -50.05, 50.05);
 
       _temperatureHist[index]=new TGraph();
       _temperatureHist[index]->SetMarkerStyle(20);
@@ -197,8 +196,7 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
       if(data[0]==0 && data[1]==0 && data[3]==0) continue; //FIXME temporary check for bad events
                                                            //where other channels work, so that timSinceSpill wasn't marked as NAN
 
-      //divide prespill region into three parts
-      //using only 1 region (i.e. don't devide the prespill region) returns a pedestal which is too high
+      //divide prespill region into three parts to remove portions of the waveform that may contain pulses
       int numberOfRegions=3;
       for(int i=0; i<numberOfRegions; i++)
       {
@@ -212,14 +210,20 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
           if(ADC<minADC || isnan(minADC)) minADC=ADC;
           if(ADC>maxADC || isnan(maxADC)) maxADC=ADC;
         }
-        if(maxADC-minADC>5) continue;
         average/=_numberOfPreSignalSamples/numberOfRegions;
-        _pedestalHist[index]->Fill(average);
+        if(maxADC-average>2.5) continue;
+        if(minADC-average<-2.5) continue;
+
+        for(int j=0; j<_numberOfPreSignalSamples/numberOfRegions; j++)
+        {
+          short ADC=data[i*_numberOfPreSignalSamples/numberOfRegions+j];
+          _pedestalHist[index]->Fill(ADC);
+        }
       }
     }
   }
 }
-void CrvEvent::CalculatePedestal()
+void CrvEvent::CalculatePedestal(double pedestalCorrection)
 {
   for(int i=0; i<_numberOfFebs; i++)
   {
@@ -245,6 +249,7 @@ void CrvEvent::CalculatePedestal()
       funcPedestal.DrawClone("SAME");
       _pedestalHist[index]->Fit(&funcPedestal, "QR");
       _pedestals[index] = funcPedestal.GetParameter(1);
+      _pedestals[index]+= pedestalCorrection;
 
       double noiseStdDev=_pedestalHist[index]->GetStdDev();
 
@@ -840,7 +845,8 @@ void CrvEvent::Summarize(const std::string &pdfFileName)
   summaryCanvas2.Print(pdfFileName.c_str(), "pdf");
 }
 
-void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &pdfFileName, int nPEpeaksToFit)
+void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &pdfFileName,
+             int nPEpeaksToFit, int preSignalSamples, double pedestalCorrection)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -867,13 +873,13 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->SetBranchAddress("spill_number_of_samples", &numberOfSamples);
   treeSpills->GetEntry(0);  //to read the channelsPerFeb and numberOfSamples
 
-  CrvEvent event(numberOfFebs, channelsPerFeb, numberOfSamples, tree);
+  CrvEvent event(numberOfFebs, channelsPerFeb, numberOfSamples, tree, preSignalSamples);
 
   int nEvents = tree->GetEntries();
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
 //if(nEvents>100000) nEvents=100000;   //FIXME
   for(int i=0; i<nEvents; i++) event.FillPedestalHistograms(i);
-  event.CalculatePedestal();
+  event.CalculatePedestal(pedestalCorrection);
   for(int i=0; i<nEvents; i++) event.FillCalibrationHistograms(i);
   event.CalculateCalibrationConstants(pdfFileName, nPEpeaksToFit);
   event.StorePedestalAndCalibrationConstants(calibFile);
@@ -949,6 +955,10 @@ void printHelp()
   std::cout<<"Options:"<<std::endl;
   std::cout<<"-p   number of PE peaks fitted"<<std::endl;
   std::cout<<"     default: 1"<<std::endl;
+  std::cout<<"-c   length of presignal region for the calibration"<<std::endl;
+  std::cout<<"     default: 60"<<std::endl;
+  std::cout<<"-a   correction to the pedestal"<<std::endl;
+  std::cout<<"     default: 0"<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -970,13 +980,17 @@ int main(int argc, char **argv)
   std::string pdfFileName;
   makeFileNames(runNumber, inFileName, calibFileName, pdfFileName);
 
-  int nPEpeaksToFit = 1;
+  int    nPEpeaksToFit = 1;
+  int    preSignalSamples = 60;
+  double pedestalCorrection = 0;
   for(int i=2; i<argc-1; i++)
   {
     if(strcmp(argv[i],"-p")==0) nPEpeaksToFit=atoi(argv[i+1]);
+    if(strcmp(argv[i],"-c")==0) preSignalSamples=atoi(argv[i+1]);
+    if(strcmp(argv[i],"-a")==0) pedestalCorrection=atof(argv[i+1]);
   }
 
-  process(runNumber, inFileName, calibFileName, pdfFileName, nPEpeaksToFit);
+  process(runNumber, inFileName, calibFileName, pdfFileName, nPEpeaksToFit, preSignalSamples, pedestalCorrection);
 
   return 0;
 }
