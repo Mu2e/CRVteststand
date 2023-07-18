@@ -147,7 +147,8 @@ def plot_dqm(filename_list, plot_dict, dqmFilter = '', dqmVerbose = False, nSmoo
                             continue
                     if dqmFilter:
                         if not eval("tSpill.dqmRedFlag"+dqmFilter):
-                            print ("!!! spill %i, %04i DQM = 0x%x"%(iSpill, tSpill.spillNumber, tSpill.dqmRedFlag))
+                            if (tSpill.dqmRedFlag & 0x6) != 0x6: # not empty spill
+                                print ("!!! spill %i, %04i DQM = 0x%x"%(iSpill, tSpill.spillNumber, tSpill.dqmRedFlag))
                     plotData[k]["ts"].append(tSpill.tsEpoch)
                     if dqmFilter:
                         plotData[k]['dqm'].append(eval("tSpill.dqmRedFlag"+dqmFilter))
@@ -340,11 +341,12 @@ spill_summary_branch_list = [("filename", "vstring"), ("runNum", "i"), ("subrunN
 subrun_summary_branch_list = [("filename", "vstring"), ("runNum", "i"), ("subrunNum", "i"), ("runType", "vstring"), 
                               ("nFEB", "i"), ("nChannel", "i"), ("spillStart", "i"), ("spillNum", "i"), 
                               ("pedestal", "vdouble"), ("calibRaw", "vdouble"), ("calibAdj", "vdouble"),
+                              ("tsEpochStart", "L"), ("tsEpochEnd", "L"),
                               ("busSiPMBias", "vdouble"), ("temperatureFEB", "vdouble"), ("temperatureCMB", "vdouble"), # averaged
                               ("spectrum", "vstring"),("spectrumCorrected", "vstring"),("spectrumCustomized", "vstring")]
-spec_nbin = 100
+spec_nbin = 200
 spec_xmin = 0.
-spec_xmax = 100.
+spec_xmax = 200.
 
 def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tree, spill_summary_entry_dict, subrun_summary_entry_dict, 
                   applyManualDQC = True, dqmFilter = '== 0x0', dqmVerbose = False, spectrumTempCorrection = "110", weightedAvg = True):
@@ -364,8 +366,8 @@ def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tre
         isRaw = False
     else:
         isRaw = True
-    runNum = int(localfilename.split('.')[-2].split('_')[0])
-    subrunNum = int(localfilename.split('.')[-2].split('_')[1])
+    runNum = filepath.filenameparser(filename, 'run')
+    subrunNum = filepath.filenameparser(filename, 'subrun')
     runType = "cosmics" if isCosmic else "LED"
     spectrumNameStem = "run_%06i_%03i_"%(runNum,subrunNum)+runType+"_"
     
@@ -379,7 +381,11 @@ def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tre
     subrun_summary_entry_dict["subrunNum"][0] = subrunNum
     spill_summary_entry_dict["runType"].push_back(runType)
     subrun_summary_entry_dict["runType"].push_back(runType)    
-        
+    
+    if applyManualDQC:
+        if (runNum, subrunNum) in manualDQC.exclude_subrun:
+            return
+    
     fFile = TFile(filename, "READ")
     runtree = fFile.Get("run")
     spilltree = fFile.Get("spills")
@@ -402,6 +408,9 @@ def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tre
         if nEventInSpill > 0:
             tSpill.getTempCMB(runtree, nFEB, iEvent, False)
         
+        if iSpill != 0 and iSpill%200 == 0:
+            print("Run%04i_%03i processed %i/%i spills..."%(runNum,subrunNum,iSpill,nSpill))
+        
         if iSpill == 0:
             temperatureFEB_avg = np.zeros(nFEB, dtype=np.float64)
             temperatureCMB_avg = np.zeros((nFEB, geometry_constants.nChannelPerFEB), dtype=np.float64)
@@ -415,6 +424,7 @@ def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tre
             subrun_summary_entry_dict["nChannel"][0] = geometry_constants.nChannelPerFEB
             subrun_summary_entry_dict["spillStart"][0] = spill_summary_tree.GetEntries()
             subrun_summary_entry_dict["spillNum"][0] = nSpill
+            
             fROOT_output.cd()
             for iFEB in range(nFEB):
                 for iCh in range(geometry_constants.nChannelPerFEB):
@@ -494,10 +504,14 @@ def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tre
         spill_summary_entry_dict["eventNum"][0] = nEventInSpill
         spill_summary_entry_dict["dqcRedFlag"].push_back("0x%x"%(tSpill.dqmRedFlag))
         spill_summary_entry_dict["tsEpoch"][0] = tSpill.tsEpoch
+        if iSpill == 0:
+            subrun_summary_entry_dict["tsEpochStart"][0] = tSpill.tsEpoch
+        subrun_summary_entry_dict["tsEpochEnd"][0] = tSpill.tsEpoch
+        
         for iFEB in range(nFEB):
             spill_summary_entry_dict["temperatureFEB"].push_back(tSpill.temperatureFEB[iFEB])
             for iCh in range(geometry_constants.nChannelPerFEB):
-                spill_summary_entry_dict["temperatureCMB"].push_back(-999. if (tSpill.temperatureCMB is None) else tSpill.temperatureCMB[iFEB, iCh])
+                spill_summary_entry_dict["temperatureCMB"].push_back(np.nan if (tSpill.temperatureCMB is None) else tSpill.temperatureCMB[iFEB, iCh])
             for iAFE in range(geometry_constants.nAFEPerFEB):
                 spill_summary_entry_dict["busSiPMBias"].push_back(tSpill.busSiPMBias[iFEB, iAFE])
         spill_summary_tree.Fill()
@@ -518,14 +532,14 @@ def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tre
 
     isEmpty = True if (pedestal is None) else False
     for iFEB in range(nFEB):
-        subrun_summary_entry_dict["temperatureFEB"].push_back(-999. if (divider == 0) else temperatureFEB_avg[iFEB])
+        subrun_summary_entry_dict["temperatureFEB"].push_back(np.nan if (divider == 0) else temperatureFEB_avg[iFEB])
         for iCh in range(geometry_constants.nChannelPerFEB):
-            subrun_summary_entry_dict["pedestal"].push_back(-999. if isEmpty else pedestal[iFEB, iCh])
-            subrun_summary_entry_dict["calibRaw"].push_back(-999. if isEmpty else calibRaw[iFEB, iCh])
-            subrun_summary_entry_dict["calibAdj"].push_back(-999. if isEmpty else calibAdj[iFEB, iCh])
-            subrun_summary_entry_dict["temperatureCMB"].push_back(-999. if (divider == 0) else temperatureCMB_avg[iFEB, iCh])
+            subrun_summary_entry_dict["pedestal"].push_back(np.nan if isEmpty else pedestal[iFEB, iCh])
+            subrun_summary_entry_dict["calibRaw"].push_back(np.nan if isEmpty else calibRaw[iFEB, iCh])
+            subrun_summary_entry_dict["calibAdj"].push_back(np.nan if isEmpty else calibAdj[iFEB, iCh])
+            subrun_summary_entry_dict["temperatureCMB"].push_back(np.nan if (divider == 0) else temperatureCMB_avg[iFEB, iCh])
         for iAFE in range(geometry_constants.nAFEPerFEB):
-            subrun_summary_entry_dict["busSiPMBias"].push_back(-999. if (divider == 0) else busSiPMBias_avg[iFEB, iAFE])
+            subrun_summary_entry_dict["busSiPMBias"].push_back(np.nan if (divider == 0) else busSiPMBias_avg[iFEB, iAFE])
     subrun_summary_tree.Fill()
     
     fROOT_output.cd()

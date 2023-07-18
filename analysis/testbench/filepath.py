@@ -5,21 +5,23 @@ import geometry_constants
 os.system("setup mu2efiletools")
 os.system("setup dhtools")
 
-dataFileGroup_dict = {"recoROOT":"rec.mu2e.CRV_wideband_cosmics.CRVWB-000-001-000.root",
-                      "rawROOT" :"ntd.mu2e.CRV_wideband_cosmics.CRVWB-000-001-000.root",
-                      "caliPDF" :"etc.mu2e.CRV_wideband_cosmics_cali.CRVWB-000-001-000.pdf",
-                      "caliTXT" :"etc.mu2e.CRV_wideband_cosmics_cali.CRVWB-000-001-000.txt",
-                      "recoPDF" :"etc.mu2e.CRV_wideband_cosmics_reco.CRVWB-000-001-000.pdf",
-                      "recoTXT" :"etc.mu2e.CRV_wideband_cosmics_reco.CRVWB-000-001-000.txt"
+dataFileGroup_dict = {"recoROOT":["rec.mu2e.CRV_wideband_cosmics","CRVWB-000-001-000","root"],
+                      "rawROOT" :["ntd.mu2e.CRV_wideband_cosmics","CRVWB-000-001-000","root"],
+                      "caliPDF" :["etc.mu2e.CRV_wideband_cosmics_cali","CRVWB-000-001-000","pdf"],
+                      "caliTXT" :["etc.mu2e.CRV_wideband_cosmics_cali","CRVWB-000-001-000","txt"],
+                      "recoPDF" :["etc.mu2e.CRV_wideband_cosmics_reco","CRVWB-000-001-000","pdf"],
+                      "recoTXT" :["etc.mu2e.CRV_wideband_cosmics_reco","CRVWB-000-001-000","txt"]
                      }
 
 def filenameparser(fullfilename, item):
     localFilename = fullfilename.split('/')[-1]
+    # print(fullfilename)
     passVerStr = localFilename.split('.')[-3]
     passVer = int(passVerStr.split('-')[-2])
     runSubrunStr = localFilename.split('.')[-2]
     runNum = int(runSubrunStr.split('_')[0])
-    subrunNum = int(runSubrunStr.split('_')[1])
+    runSubrunSplit = runSubrunStr.split('_')
+    subrunNum = int(runSubrunSplit[1]) if len(runSubrunSplit)>1 else 0
     if item == 'verstr':
         return passVerStr
     elif item == 'ver':
@@ -32,22 +34,25 @@ def filenameparser(fullfilename, item):
         print(item, "is not a valid attribute name of filename.")
         return None
 
-def getfullfilelist(label):
+def getfullfilelist(label, passVer = 1):
     if label not in dataFileGroup_dict:
         print(label, "is not a valid file group name.")
         print("available names are:")
         print(dataFileGroup_dict.keys())
         return []
     else:
-        cmd = "mu2eDatasetFileList "+dataFileGroup_dict[label]
+        namestrings = dataFileGroup_dict[label]
+        if int(namestrings[1].split('-')[-2])!=passVer:
+            namestrings[1] = "CRVWB-000-%03i-000"%(passVer)
+        cmd = "mu2eDatasetFileList "+'.'.join(namestrings)
         buffer = subprocess.check_output(cmd, shell=True, text=True)
         file_list = [f for f in buffer.split('\n') if f.strip()]
         file_list.sort(key=lambda x:(filenameparser(x,'run'), filenameparser(x,'subrun')))
         return file_list
 
-def findlinked(fullfilename, label):
+def findlinked(fullfilename, label, passVer = 1):
     filelist = []
-    for file in getfullfilelist(label):
+    for file in getfullfilelist(label, passVer):
         if filenameparser(fullfilename, 'run')==filenameparser(file, 'run') and filenameparser(fullfilename, 'subrun')==filenameparser(file, 'subrun'):
             filelist.append(file)
     if len(filelist)>1:
@@ -56,7 +61,7 @@ def findlinked(fullfilename, label):
     else:
         return filelist[0]
 
-datatag = { #1299 onwards; updated to 1396. #FIXME: tag previous runs
+datatag = { #updated to 1420. #FIXME: tag previous runs
           "LED_temp_scan_bad": {# bad data due to long spills / external HD
               "type":"LED", 
               "config":"crvled-001",
@@ -77,8 +82,10 @@ datatag = { #1299 onwards; updated to 1396. #FIXME: tag previous runs
           "LED_low_PE": {
               "type":"LED",
               "config":"crvled-001",
-              "run#":[1361, 1362, 1363, 1364, 1365, 1366, 1367],
-              "LEDbias":[0x600, 0x500, 0x580, 0x680, 0x700, 0x780, 0x800]},
+              "run#":[1361, 1364, 1365, 1366, 1367],
+              "LEDbias":[0x600, 0x680, 0x700, 0x780, 0x800]}, # 1362 1363 too low no light
+              # "run#":[1361, 1362, 1363, 1364, 1365, 1366, 1367],
+              # "LEDbias":[0x600, 0x500, 0x580, 0x680, 0x700, 0x780, 0x800]},
           "cosmics_delay": {
               "type":"cosmics", 
               "config":"crvaging-007",
@@ -87,14 +94,47 @@ datatag = { #1299 onwards; updated to 1396. #FIXME: tag previous runs
               "type":"cosmics", 
               "config":"crvaging-006",
               "run#":[1379, 1380]}, # 1380 with offset, 1379 as reference
+          # stack 127
+          "crvaging001": {
+              "type":"cosmics", 
+              "config":"crvaging-001",
+              "run#":[66, 94, 105, 119, 1010, 1020, 1021, 1022, 
+                      1031, 1033, 1034, 1035]}, 
           "crvaging007": {
               "type":"cosmics", 
               "config":"crvaging-007",
-              "run#":[1340, 1341, 1352, 1354]}, 
+              "run#":[1243, 1244, 1245, 1246, 1247, 1248, 1251, # 1242, 1249 short
+                      1262, 1264, 1276, 1279, 1280, 1281, # 1263, 1265, 1271, 1277 short
+                      1284, 1285, 1286, 1287, 1288, #
+                      1312, 1315, 1327, 1341, 1354, 1370]}, # 1340, 1352 too short
+                     #[1299, 1300, 1301, 1302, 1308, 1309, 1310, 1311, 1312] many dqc issues, missing CMB temp. etc.
+          # stack 168
+          "crvaging003": {
+              "type":"cosmics", 
+              "config":"crvaging-003",
+              "run#":[1059, 1091, 1116]}, # 1124 short
+          "crvaging004": {
+              "type":"cosmics", 
+              "config":"crvaging-004",
+              "run#":[1080, 1081, 1082]}, # 1079, 1133, 1134 short
+          "crvaging005": {
+              "type":"cosmics", 
+              "config":"crvaging-005",
+              "run#":[1137, 1138, 1146,   # 1141, 1142 short
+                      1148, 1149, 1150, 1152, 1154]}, #  
           "crvaging006": {
               "type":"cosmics", 
               "config":"crvaging-006",
-              "run#":[1375, 1376]}, 
+              "run#":[1159, 1160, 1161, 1167, 1168, 1169, 1170, 1171, #
+                      1177, 1181, # 1172, 1173, 1176, 1178, 1182, 1208 short
+                      1212, 1217, 1218, 1219, 1240, 1241, # 1209, 1220 short
+                      1375, 1376, 1379, 1380, 1400, 1407]},  
+          # stack 169
+          "crvaging008": {
+              "type":"cosmics", 
+              "config":"crvaging-008",
+              "run#":[1419, 1420]}, 
+    
           "trim_scan": {
               "type":"cosmics", 
               "config":"crvaging-006",
@@ -108,14 +148,19 @@ datatag = { #1299 onwards; updated to 1396. #FIXME: tag previous runs
               "trim":[   0, -500, +500, +375, -375, -250, +250, +125, -125,
                          0,    0,    0,    0,    0,    0],
               "bulk":[   0,    0,    0,    0,    0,    0,    0,    0,    0,
-                       -50,  +50,  +30,  -30,  -10,  +10]}
+                       -50,  +50,  +30,  -30,  -10,  +10]},
+          "trim_scan_stack_169": {
+              "type":"led", 
+              "config":"crvled-003",
+              "run#":[1414, 1415, 1416, 1417, 1418],
+              "trim":[   0, -500, +500, +250, -250]}
 }
 
 # temperature scan data tags, exist for compatibility reasons
 ds_temp_scan_cosmics = ["LED_temp_scan_cosmics"]
 ds_temp_scan_led = ["LED_temp_scan"]
     
-def getfilelist(taglist, filetype = "recoROOT"): # argument can be a list of keys from the above dictionary or run numbers
+def getfilelist(taglist, filetype = "recoROOT", passVer = 1): # argument can be a list of keys from the above dictionary or run numbers
     filenamelist = []
     runnumlist = []
     configlist = []
@@ -149,7 +194,7 @@ def getfilelist(taglist, filetype = "recoROOT"): # argument can be a list of key
             nFEBlist.append(None)
             print("WARNING: filepath.getfilelist: unable to recognize data tag:", tag)
     
-    fullfilelist = getfullfilelist(filetype)
+    fullfilelist = getfullfilelist(filetype, passVer)
     for runnumber in runnumlist:
         templist = []
         for file in fullfilelist:

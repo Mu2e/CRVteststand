@@ -241,11 +241,11 @@ class crv_event:
     
     def FillPedestalHistogramsStock(self, pedestalHist):
     # adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes
-        if self.adc == None:
+        if self.adc is None:
             sys.exit("ERROR: CRV_event: adc is not loaded")
         for iFEB in range(self.nFEB):
             for iCh in range(geometry_constants.nChannelPerFEB):
-                if np.isnan(tEvent.timeSinceSpill[iFEB][iCh]):
+                if np.isnan(self.timeSinceSpill[iFEB][iCh]):
                 # missing FEB/channel in raw data
                     continue
                 data = self.adc[iFEB][iCh]
@@ -267,18 +267,18 @@ class crv_event:
                             minADC = tadc
                         if tadc > maxADC or math.isnan(maxADC):
                             maxADC = tadc
-                        if maxADC-minADC > 5:
-                            continue
+                    if maxADC-minADC > 5:
+                        continue
                     average/=float(int(constants.numberOfPreSignalSamples/numberOfRegions))
                     pedestalHist[iFEB][iCh].Fill(average)
         return
     
     def FillPedestalHistogramsAllPts(self, pedestalHist):
-        if self.adc == None:
+        if self.adc is None:
             sys.exit("ERROR: CRV_event: adc is not loaded")
         for iFEB in range(self.nFEB):
             for iCh in range(geometry_constants.nChannelPerFEB):
-                if np.isnan(tEvent.timeSinceSpill[iFEB][iCh]):
+                if np.isnan(self.timeSinceSpill[iFEB][iCh]):
                 # missing FEB/channel in raw data
                     continue
                 data = self.adc[iFEB][iCh]
@@ -289,15 +289,69 @@ class crv_event:
                 for i in range(constants.numberOfPreSignalSamples):
                     pedestalHist[iFEB][iCh].Fill(data[i])
         return
-'''
-    def FillCalibrationHistogramsStock(self, calibHist, all_pedestals):
-    # adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes
-        global nPreSignalRegions, nNoiseHits
-        if self.adc == None:
+    
+    def FillPedestalHistogramsAllPtsExceptP5ADC(self, pedestalHist):
+        local_ped = [[None]*geometry_constants.nChannelPerFEB for i in range(self.nFEB)]
+        
+        if self.adc is None:
             sys.exit("ERROR: CRV_event: adc is not loaded")
         for iFEB in range(self.nFEB):
             for iCh in range(geometry_constants.nChannelPerFEB):
-                if np.isnan(tEvent.timeSinceSpill[iFEB][iCh]):
+                if np.isnan(self.timeSinceSpill[iFEB][iCh]):
+                # missing FEB/channel in raw data
+                    continue
+                data = self.adc[iFEB][iCh]
+                if data[0]==0 and data[1]==0 and data[3]==0:
+                # FIXME temporary check for bad events
+                # where other channels work, so that timSinceSpill wasn't marked as NAN
+                    continue
+                # divide prespill region into three parts
+                # using only 1 region (i.e. don't devide the prespill region) returns a pedestal which is too high
+                
+                # first do a "local estimation"
+                numberOfRegions=3
+                crude_pedestal = []
+                for i in range(numberOfRegions):
+                    average = 0
+                    minADC = float('nan')
+                    maxADC = float('nan')
+                    for j in range(int(constants.numberOfPreSignalSamples/numberOfRegions)):
+                        tadc = data[i*int(constants.numberOfPreSignalSamples/numberOfRegions)+j]
+                        average += tadc
+                        if tadc < minADC or math.isnan(minADC):
+                            minADC = tadc
+                        if tadc > maxADC or math.isnan(maxADC):
+                            maxADC = tadc
+                    if maxADC-minADC > 5:
+                        continue
+                    average/=float(int(constants.numberOfPreSignalSamples/numberOfRegions))
+                    crude_pedestal.append(average)
+                
+                if len(crude_pedestal) == 0:
+                    continue # too noisy local ped. ignore this sector
+                crude_pedestal = float(sum(crude_pedestal))/float(len(crude_pedestal))
+                local_ped[iFEB][iCh] = crude_pedestal
+                
+                pedfilter = [True]*constants.numberOfPreSignalSamples
+                for i in range(constants.numberOfPreSignalSamples):
+                    if data[i] > crude_pedestal+5:
+                        for j in range(max(0,i-4), min(constants.numberOfPreSignalSamples,i+11)):
+                            pedfilter[j] = False
+                    
+                for i in range(constants.numberOfPreSignalSamples):
+                    if pedfilter[i]:
+                        pedestalHist[iFEB][iCh].Fill(data[i])
+        return local_ped
+
+    def FillCalibrationHistogramsStock(self, all_pedestals, rawCalibHist, temperatureCorrectedCalibHist = None):
+    # adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes       
+        global nPreSignalRegions, nNoiseHits
+        if self.adc is None:
+            sys.exit("ERROR: CRV_event: adc is not loaded")
+            
+        for iFEB in range(self.nFEB):
+            for iCh in range(geometry_constants.nChannelPerFEB):
+                if np.isnan(self.timeSinceSpill[iFEB][iCh]):
                 # missing FEB/channel in raw data
                     continue
                 data = self.adc[iFEB][iCh]
@@ -317,13 +371,13 @@ class crv_event:
                 for ibin in range(nBins):
                     waveform.append(data[ibin]-pedestal)
                     if ibin>1 and ibin<nBins-3: #don't search for peaks too close to the sample start or end
-                        if (data[ibin-1]<data[ibin] && data[ibin]>data[ibin+1] && data[ibin]-pedestal>constants.noiseThreshold):
+                        if (data[ibin-1]<data[ibin] and data[ibin]>data[ibin+1] and data[ibin]-pedestal>constants.noiseThreshold):
                             peaks.append((ibin,False))
-                        if (data[ibin-1]<data[ibin] && data[ibin]==data[ibin+1] && data[ibin+1]>data[ibin+2] && data[ibin]-pedestal>constants.noiseThreshold):
+                        if (data[ibin-1]<data[ibin] and data[ibin]==data[ibin+1] and data[ibin+1]>data[ibin+2] and data[ibin]-pedestal>constants.noiseThreshold):
                             peaks.append((ibin,True))
                     # sum += math.fabs(data[ibin]-pedestal)
                 # don't use noisy events  # doesn't seem to do much
-                # if(float(sum)/float(nBins)>1.0):
+                # if (float(sum)/float(nBins)>1.0):
                     # return  //FIXME
                     
                 nPreSignalRegions[iFEB][iCh] += 1
@@ -365,88 +419,236 @@ class crv_event:
                     f.SetParameter(2, 12.6)
                     
                     # do the fit
-                    fr = g.Fit(f,"QS" if (_draw1PE[index] or _draw2PE[index]) else "NQS")
+                    fr = g.Fit(f,"NQS")
 
+                    if not fr.IsValid():
+                        continue
+                    if fr.Parameter(0)<=0 or fr.Parameter(2)<4:
+                        continue # probably misreconstructed
+                    if fr.Parameter(2)>25:
+                        continue # probably not a noise hit
+                    if math.fabs(fr.Parameter(1)-maxBin*binWidth)>30:
+                        continue
+                    if fr.Parameter(0)/(waveform[maxBin]*ROOT.TMath.E())>1.5:
+                        continue
                     
+                    pulseArea = fr.Parameter(0)*fr.Parameter(2)
+                    rawCalibHist[iFEB][iCh].Fill(pulseArea)
                     
-                    
-                    
-                    
-        //do the fit
-        TFitResultPtr fr = g.Fit(&f,(_draw1PE[index]||_draw2PE[index])?"QS":"NQS");
+                    # temperature correction of noise pulse area
+                    if temperatureCorrectedCalibHist is not None:
+                        if self.temperature[iFEB][iCh] != 0:
+                            pulseArea *= (constants.calibTemperatureIntercept-constants.referenceTemperature)/(constants.calibTemperatureIntercept-self.temperature[iFEB][iCh])
+                            temperatureCorrectedCalibHist[iFEB][iCh].Fill(pulseArea)
 
-        if(!fr->IsValid()) continue;
-        if(fr->Parameter(0)<=0 || fr->Parameter(2)<4) continue; //probably misreconstructed
-        if(fr->Parameter(2)>25) continue;  //probably not a noise hit
-        if(fabs(fr->Parameter(1)-maxBin*binWidth)>30) continue;
-        if(fr->Parameter(0)/(waveform[maxBin]*TMath::E())>1.5) continue;
-
-        double pulseArea = fr->Parameter(0)*fr->Parameter(2);
-        _calibVector[0][index]._calibrationHist->Fill(pulseArea);
-
-        //temperature correction of noise pulse areai
-        if(_temperature[index]!=0)
-        {
-          pulseArea*=(_calibTemperatureIntercept-_referenceTemperature)/(_calibTemperatureIntercept-_temperature[index]);
-          _calibVector[1][index]._calibrationHist->Fill(pulseArea);
-        }
-
-        if(_draw1PE[index] && waveform[maxBin]<17)
-        {
-          TVirtualPad *p=gPad;
-          gPad->cd(1);
-          g.SetTitle("Example of a 1PE dark noise pulse; Time [ns]; ADC   ");
-          g.SetMarkerStyle(20);
-          g.SetMarkerColor(kBlack);
-          g.GetHistogram()->GetXaxis()->SetTitleSize(0.05);
-          g.GetHistogram()->GetXaxis()->SetLabelSize(0.05);
-          g.GetHistogram()->GetYaxis()->SetTitleSize(0.05);
-          g.GetHistogram()->GetYaxis()->SetLabelSize(0.05);
-          g.GetHistogram()->GetYaxis()->SetTitleOffset(-0.6);
-          g.DrawClone("AP");
-          f.SetLineColor(kRed);
-          f.DrawCopy("same");
-          _draw1PE[index]=false;
-          p->cd();
-        }
-        if(_draw2PE[index] && waveform[maxBin]>24 && waveform[maxBin]<36)
-        {
-          TVirtualPad *p=gPad;
-          gPad->cd(2);
-          g.SetTitle("Example of a 2PE dark noise pulse; Time [ns]; ADC   ");
-          g.SetMarkerStyle(20);
-          g.SetMarkerColor(kBlack);
-          g.GetHistogram()->GetXaxis()->SetTitleSize(0.05);
-          g.GetHistogram()->GetXaxis()->SetLabelSize(0.05);
-          g.GetHistogram()->GetYaxis()->SetTitleSize(0.05);
-          g.GetHistogram()->GetYaxis()->SetLabelSize(0.05);
-          g.GetHistogram()->GetYaxis()->SetTitleOffset(-0.6);
-          g.DrawClone("AP");
-          f.SetLineColor(kRed);
-          f.DrawCopy("same");
-          _draw2PE[index]=false;
-          p->cd();
-        }
-      }//peaks
-
-      //fill temperature plot
-      if(_temperature[index]!=0 && _lastSpillIndex[index]!=_spillIndex)
-      {
-        _temperatureHist[index]->SetPoint(_temperatureHist[index]->GetN(),_spillIndex,_temperature[index]);
-        _lastSpillIndex[index]=_spillIndex;
-      }
-
-    }//channel
-  }//feb
-}
-
-
-'''
-
-
-
+                    # plotting of example 1PE / 2PE plots, temperature plot omitted
+        return
     
-def CalculatePedestalStock(nFEB, pedestalHist, canvas = None):
+    def peakFitter(self, all_pedestals, calibrationFactor, calibrationFactorTemperatureCorrected, fitReflected = True):
+    # adaption of recoCrv::CrvRecoEvent::PeakFitter
+        
+        if self.adc is None:
+            sys.exit("ERROR: CRV_event: adc is not loaded")
+            
+        # prepare containers. All initialized to nan
+        self.pedestal = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        
+        self.fitStatus = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.recoStartBin = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.recoEndBin = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.PEs = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.pulseHeight = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.time = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.beta = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.LEtime = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        self.PEsTemperatureCorrected = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        
+        if fitReflected:
+            self.fitStatusReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.recoStartBinReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.recoEndBinReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.PEsReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.pulseHeightReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.timeReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.betaReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.LEtimeReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+            self.PEsTemperatureCorrectedReflectedPulse = numpy.full((self.nFEB, geometry_constants.nChannelPerFEB), np.nan, dtype=np.float32)
+        
+        for iFEB in range(self.nFEB):
+            for iCh in range(geometry_constants.nChannelPerFEB):
+                if np.isnan(self.timeSinceSpill[iFEB][iCh]):
+                # missing FEB/channel in raw data
+                    continue
+                data = self.adc[iFEB][iCh]
+                if data[0]==0 and data[1]==0 and data[3]==0:
+                # FIXME temporary check for bad events
+                # where other channels work, so that timSinceSpill wasn't marked as NAN
+                    continue
+                pedestal = all_pedestals[iFEB][iCh]
+                self.pedestal[iFEB][iCh] = pedestal
+                
+                # remove the pedestal and find the maxima in the signal region
+                waveform = []
+                peaks = []
+                peakBinsStart=0
+                peakBinsEnd=0
+                
+                for ibin in range(constants.signalRegionStart, min(len(data),constants.signalRegionEnd+1)):
+                    waveform.append(data[ibin]-pedestal)
+                    if ibin <= constants.signalRegionStart:
+                        continue
+                    
+                    if data[ibin-1]<data[ibin]: # rising edge
+                        peakBinsStart=ibin
+                        peakBinsEnd=ibin
+                        
+                    if data[ibin-1]==data[ibin]: #potentially at a peak with consecutive ADC values which are equal
+                        peakBinsEnd=ibin
+                        
+                    if data[ibin-1]>data[ibin]:
+                        if peakBinsStart>0: # found a peak
+                            if data[peakBinsStart]-pedestal>6: # ignores fluctuations of the baseline
+                                peaks.append((data[peakBinsStart]-pedestal, peakBinsStart, peakBinsEnd))
+                        peakBinsStart = 0
+                        
+                # ignore events without pulses
+                if len(peaks)==0:
+                    self.fitStatus[iFEB][iCh] = 0
+                    self.fitStatusReflectedPulse[iFEB][iCh] = 0
+                    continue
+                
+                # only look at the largest peak (and if available the peak after that for a potential reflected pulse)
+                iPeak = 0
+                maxPeak = 0
+                for i in range(len(peaks)):
+                    if peaks[i][0]>maxPeak:
+                        maxPeak = peaks[i][0]
+                        iPeak = i
+                
+                binWidth=1.0/constants.RATE
+                    
+                for i in range(2):
+                    
+                    if fitReflected == False and i == 1:
+                        continue
+                    
+                    if iPeak == len(peaks)-1:
+                        self.fitStatusReflectedPulse[iFEB][iCh] = 0
+                        continue
+                        
+                    peakBinsStart = peaks[iPeak+i][1]-constants.signalRegionStart
+                    peakBinsEnd   = peaks[iPeak+i][2]-constants.signalRegionStart
+                    averagePeakBin = 0.5*(peakBinsStart+peakBinsEnd)
+                    
+                    #select a range of up to 4 points before and after the peak
+                    #-find up to 5 points before and after the peak for which the waveform is stricly decreasing
+                    #-remove 1 point on each side. this removes potentially "bad points" belonging to a second pulse (i.e. in double pulses)
+                    nBins = len(waveform)
+                    tmp_recoStartBin=peakBinsStart-1
+                    tmp_recoEndBin=peakBinsEnd+1
+                    for ibin in range(peakBinsStart-1, max(-1, peakBinsStart-5-1), -1):
+                        if waveform[ibin]<=wavform[ibin+1]:
+                            tmp_recoStartBin = ibin
+                        else:
+                            break
+                    for ibin in range(peakBinsEnd+1, min(nBins, peakBinsEnd+5+1)):
+                        if waveform[ibin]<=wavform[ibin-1]:
+                            tmp_recoEndBin = ibin
+                        else:
+                            break
+                    if peakBinsStart - tmp_recoStartBin > 1:
+                        tmp_recoStartBin += 1
+                    if tmp_recoEndBin - peakBinsEnd > 1:
+                        tmp_recoEndBin -= 1
+                     
+                    if i == 0:
+                        self.recoStartBin[iFEB][iCh] = tmp_recoStartBin
+                        self.recoEndBin[iFEB][iCh] = tmp_recoEndBin
+                    else:
+                        self.recoStartBinReflectedPulse[iFEB][iCh] = tmp_recoStartBin
+                        self.recoEndBinReflectedPulse[iFEB][iCh] = tmp_recoEndBin
+                        
+                    # fill the graph
+                    g = ROOT.TGraph()
+                    for ibin in range(tmp_recoStartBin, tmp_recoEndBin+1):
+                        t = ibin*binWidth
+                        v = waveform[ibin]
+                        g.SetPoint(g.GetN(), t, v)
+                        
+                    # set the fit function
+                    f = ROOT.TF1("peakfitter","[0]*(TMath::Exp(-(x-[1])/[2]-TMath::Exp(-(x-[1])/[2])))")
+                    f.SetParameter(0, waveform[peakBinsStart]*ROOT.TMath.E())
+                    f.SetParameter(1, averagePeakBin*binWidth)
+                    f.SetParameter(2, constants.DEFAULT_BETA)
+                    bound_low = [waveform[peakBinsStart]*ROOT.TMath.E()*0.7, averagePeakBin*binWidth-15.0, 5.0]
+                    bound_high = [waveform[peakBinsStart]*ROOT.TMath.E()*1.5, averagePeakBin*binWidth+15.0, 40.0]
+                    f.SetParLimits(0, bound_low[0], bound_high[0])
+                    f.SetParLimits(1, bound_low[1], bound_high[1])
+                    f.SetParLimits(2, bound_low[2], bound_high[2])
+                    
+                    # do the fit, ignore draws
+                    fr = g.Fit(f,"NQS")
+                    invalidFit=False
+                    if int(fr)!=0: 
+                        invalidFit = True
+                    if not fr.IsValid():
+                        invalidFit = True
+                    tolerance=0.01
+                    for ipar in range(3):
+                        v = fr.Parameter(ipar)
+                        if (v-bound_low[ipar])/(bound_high[ipar]-bound_low[ipar])<tolerance:
+                            invalidFit = True
+                        if (bound_high[ipar]-v)/(bound_high[ipar]-bound_low[ipar])<tolerance:
+                            invalidFit = True
+                        
+                    if invalidFit:
+                        if i == 0:
+                            self.PEs[iFEB][iCh] = waveform[peakBinsStart]*ROOT.TMath.E()*constants.DEFAULT_BETA/calibrationFactor[iFEB][iCh] #using maximum ADC value of this pulse and a typical value of beta
+                            self.pulseHeight[iFEB][iCh] = waveform[peakBinsStart] 
+                            self.time[iFEB][iCh] = averagePeakBin*binWidth
+                            self.beta[iFEB][iCh] = constants.DEFAULT_BETA
+                            self.LEtime[iFEB][iCh] = self.time[iFEB][iCh]-0.985*constants.DEFAULT_BETA # time-0.985*beta for 50% pulse height
+                            self.fitStatus[iFEB][iCh] = 2                        
+                        else:
+                            self.PEsReflectedPulse[iFEB][iCh] = waveform[peakBinsStart]*ROOT.TMath.E()*constants.DEFAULT_BETA/calibrationFactor[iFEB][iCh] #using maximum ADC value of this pulse and a typical value of beta
+                            self.pulseHeightReflectedPulse[iFEB][iCh] = waveform[peakBinsStart]
+                            self.timeReflectedPulse[iFEB][iCh] = averagePeakBin*binWidth
+                            self.betaReflectedPulse[iFEB][iCh] = constants.DEFAULT_BETA
+                            self.LEtimeReflectedPulse[iFEB][iCh] = self.time[iFEB][iCh]-0.985*constants.DEFAULT_BETA # time-0.985*beta for 50% pulse height
+                            self.fitStatusReflectedPulse[iFEB][iCh] = 2 
+                    else:
+                        if i == 0:
+                            self.PEs[iFEB][iCh] = fr.Parameter(0)*fr.Parameter(2) / calibrationFactor[iFEB][iCh]
+                            self.pulseHeight[iFEB][iCh] = fr.Parameter(0)/ROOT.TMath.E()
+                            self.time[iFEB][iCh] = fr.Parameter(1)
+                            self.beta[iFEB][iCh] = fr.Parameter(2)
+                            self.LEtime[iFEB][iCh] = fr.Parameter(1)-0.985*fr.Parameter(2) # at 50% of pulse height
+                            self.fitStatus[iFEB][iCh] = 1
+                        else:
+                            self.PEsReflectedPulse[iFEB][iCh] = fr.Parameter(0)*fr.Parameter(2) / calibrationFactor[iFEB][iCh]
+                            self.pulseHeightReflectedPulse[iFEB][iCh] = fr.Parameter(0)/ROOT.TMath.E()
+                            self.timeReflectedPulse[iFEB][iCh] = fr.Parameter(1)
+                            self.betaReflectedPulse[iFEB][iCh] = fr.Parameter(2)
+                            self.LEtimeReflectedPulse[iFEB][iCh] = fr.Parameter(1)-0.985*fr.Parameter(2) # at 50% of pulse height
+                            self.fitStatusReflectedPulse[iFEB][iCh] = 1
+                    
+                self.time[iFEB][iCh] += constants.signalRegionStart*binWidth
+                self.LEtime[iFEB][iCh] += constants.signalRegionStart*binWidth
+                self.timeReflectedPulse[iFEB][iCh] += constants.signalRegionStart*binWidth
+                self.LEtimeReflectedPulse[iFEB][iCh] += constants.signalRegionStart*binWidth
+
+                self.PEsTemperatureCorrected[iFEB][iCh] = -1
+                self.PEsTemperatureCorrectedReflectedPulse[iFEB][iCh] = -1
+                if self.temperature[iFEB][iCh] != 0:
+                    temperatureCorrection=(constants.PETemperatureIntercept-constants.referenceTemperature)/(constants.PETemperatureIntercept-self.temperature[iFEB][iCh])
+                    if calibrationFactorTemperatureCorrected[iFEB][iCh]!=0:
+                        calibTemperatureCorrection=(constants.calibTemperatureIntercept-constants.referenceTemperature)/(constants.calibTemperatureIntercept-self.temperature[iFEB][iCh])
+                        temperatureCorrection*=calibTemperatureCorrection*calibrationFactor[iFEB][iCh]/calibrationFactorTemperatureCorrected[iFEB][iCh]
+                    self.PEsTemperatureCorrected[iFEB][iCh] = self.PEs[iFEB][iCh]*temperatureCorrection
+                    self.PEsTemperatureCorrectedReflectedPulse[iFEB][iCh] = self.PEsReflectedPulse[iFEB][iCh]*temperatureCorrection
+        return   
+    
+def CalculatePedestalStock(nFEB, pedestalHist, fitRange = 4, canvas = None):
 # adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes
     pedestals = [[None]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
     noiseStdDev = [[None]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
@@ -454,7 +656,7 @@ def CalculatePedestalStock(nFEB, pedestalHist, canvas = None):
     for iFEB in range(nFEB):
         for iCh in range(geometry_constants.nChannelPerFEB):
             if canvas:
-                canvas[iFEB][iCh].cd(1)
+                canvas.cd(1+iFEB*geometry_constants.nChannelPerFEB+iCh)
                 gPad.cd(1)
                 pedestalHist[iFEB][iCh].SetLineColor(1) # kblack
                 pedestalHist[iFEB][iCh].DrawClone()
@@ -469,8 +671,9 @@ def CalculatePedestalStock(nFEB, pedestalHist, canvas = None):
                 
             maxbinPedestal = pedestalHist[iFEB][iCh].GetMaximumBin()   
             peakPedestal = pedestalHist[iFEB][iCh].GetBinCenter(maxbinPedestal)
-            funcPedestal[iFEB][iCh] = ROOT.TF1("f_stock_%i_%i"%(iFEB,iCh), "gaus", peakPedestal-4, peakPedestal+4)
-            funcPedestal[iFEB][iCh].SetLineWidth(1)
+            # funcPedestal[iFEB][iCh] = ROOT.TF1("f_stock_%i_%i"%(iFEB,iCh), "gaus", peakPedestal-fitRange, peakPedestal+fitRange)
+            funcPedestal[iFEB][iCh] = ROOT.TF1("f_stock_%i_%i"%(iFEB,iCh), "gaus", pedestalHist[iFEB][iCh].GetMean()-fitRange, pedestalHist[iFEB][iCh].GetMean()+fitRange)
+            funcPedestal[iFEB][iCh].SetLineWidth(2)
             funcPedestal[iFEB][iCh].SetLineColor(2) # kRed
             pedestalHist[iFEB][iCh].Fit(funcPedestal[iFEB][iCh], "QR")
             if canvas:
@@ -487,182 +690,181 @@ def CalculatePedestalStock(nFEB, pedestalHist, canvas = None):
                 t1.DrawClone("SAME")
 
     return pedestals, noiseStdDev, funcPedestal
-'''          
-def CalculateCalibrationConstantsStock(nFEB, calibHist, canvas = None, nPEpeaksToFit):
+
+def CalculateCalibrationConstantSingleChannel(calibHist, nPEpeaksToFit, iFEB, iCh, canvas = None, iPad1 = None, iPad2 = None, k = 0, tag = '', peakEventLimit = 50): 
+    # k is whether temp corrected
+    global nPreSignalRegions
+    calibHist.SetLineColor(4) # kBlue
+    if canvas and iPad1:
+        tPad = canvas.cd(iPad1)
+        tPad.SetLogy()
+        calibHist.DrawClone("")
+
+    maxbin = 0
+    maxbinContent = 0
+    for ibin in range(1, calibHist.GetNbinsX()):
+        if calibHist.GetBinCenter(ibin)<250:
+            continue # find 1PE maximum only between 350 and 1100
+        if calibHist.GetBinCenter(ibin)>1500:
+            break # 1100
+        binContent = calibHist.GetBinContent(ibin)
+        if binContent > maxbinContent:
+            maxbin=ibin
+            maxbinContent=binContent
+
+    peak1PE = calibHist.GetBinCenter(maxbin)
+    func1 = ROOT.TF1("f1", "gaus", peak1PE*0.8, peak1PE*1.2)
+    func1.SetParameter(1, peak1PE)
+    func1.SetLineWidth(1)
+    func1.SetLineColor(2) # kRed
+    calibHist.Fit(func1, "QR")
+    peak1PE = func1.GetParameter(1)
+    peak1PEerr = func1.GetParError(1)
+
+    peaks = []
+    peakserr = []
+    if peak1PE>200.0 and peak1PE<1800.0:
+        peaks.append(peak1PE)
+        peakserr.append(peak1PEerr)
+        if canvas and iPad1:
+            func1.DrawClone("SAME")
+        for iPeak in range(2, nPEpeaksToFit+1):
+            peakTmp = iPeak*peak1PE
+            rangeStart = peakTmp-0.35*peak1PE
+            rangeEnd = peakTmp+0.35*peak1PE;
+            if rangeEnd>calibHist.GetXaxis().GetXmax():
+                break
+            if calibHist.Integral(calibHist.FindFixBin(rangeStart),calibHist.FindFixBin(rangeEnd))<peakEventLimit:
+                break
+            func2 = ROOT.TF1("f%i"%iPeak, "gaus", rangeStart, rangeEnd)
+            func2.SetParameter(1,peakTmp)
+            func2.SetLineWidth(1)
+            func2.SetLineColor(2) # kRed
+            if (int(calibHist.Fit(func2, "QRL"))!=0): # use least log-likelihood fit
+                break
+            peakTmp = func2.GetParameter(1)
+            peakTmperr = func2.GetParError(1)
+            if (peakTmp/peak1PE>iPeak*0.95 and peakTmp/peak1PE<iPeak*1.05):
+                peaks.append(peakTmp)
+                peakserr.append(peakTmperr)
+                if canvas and iPad1:
+                    func2.DrawClone("SAME")
+            else:
+                break
+    nPEpeaks=len(peaks)
+
+    if canvas:
+        t2 = ROOT.TPaveText(.50, .65, .89, .89, "NDC")
+        t2.SetFillColor(0)
+        for iPeak in range(len(peaks)):
+            t2.AddText("%iPE = %4.0f #pm %4.0f ADC*ns"%(iPeak+1,peaks[iPeak],peakserr[iPeak]))
+        if k == 1:
+            t2.AddText("Temperature corrected values")
+            t2.AddText("refT %f deg C, calibT0 %f deg C"%(constants.referenceTemperature,constants.calibTemperatureIntercept))
+    if len(peaks) == 0:
+        if canvas and iPad1:
+            t2.DrawClone("SAME")
+        return nPEpeaks, np.nan, None
+
+    # cross-talk and noise
+    events1PEandMore=0
+    events2PEandMore=0
+    for ibin in range(1, calibHist.GetNbinsX()):
+        area = calibHist.GetBinCenter(ibin)
+        binContent = calibHist.GetBinContent(ibin)
+        if(area>0.5*peak1PE): 
+            events1PEandMore += binContent
+        if(area>1.5*peak1PE): 
+            events2PEandMore += binContent
+    
+    noiseRate = events1PEandMore/(nPreSignalRegions[iFEB][iCh]*constants.numberOfPreSignalSamples/(constants.RATE*1e9))
+    xtalkProbability = events2PEandMore/events1PEandMore
+    if canvas and iPad1:
+        t2.AddText("Noise rate = %4.2f MHz"%(noiseRate/1.0e6))
+        t2.AddText("Xtalk prob. = %4.2f"%(xtalkProbability))
+        t2.DrawClone("SAME")
+
+    # Fit plot to determine calibration constants
+    if canvas and iPad2:
+        tPad = canvas.cd(iPad2)
+        tPad.SetLogy(0)
+
+    graph = ROOT.TGraphErrors()
+    graph.SetPoint(0,0,0)
+    graph.SetPointError(0,0,0)
+    for iPeak in range(len(peaks)):
+        graph.SetPoint(iPeak+1,iPeak+1,peaks[iPeak])
+        graph.SetPointError(iPeak+1,0,peakserr[iPeak])
+    if k == 0:
+        graph.SetTitle("FEB%i Ch%i Calib. Fit; n PE peak; Area [ADC*ns]"%(iFEB,iCh))
+    else:
+        graph.SetTitle("FEB%i Ch%i Temp. corrected calib fit; n PE peak; Area [ADC*ns]"%(iFEB,iCh))
+    graph.GetXaxis().SetRangeUser(0, len(peaks)+0.5)
+    graph.GetYaxis().SetRangeUser(0, peaks[0]*(len(peaks)+0.5))
+    graph.SetMarkerStyle(20)
+    graph.SetMarkerColor(1) # kBlack
+    if canvas and iPad2:
+        graph.DrawClone("AP")
+
+    funcFit = ROOT.TF1("calibration%i%i%i%s"%(iFEB,iCh,k,tag),"[0]*x", -0.5, len(peaks)+0.5)
+    funcFit.SetLineColor(2) # kRed
+    graph.Fit(funcFit, "QR")
+    funcFit.DrawClone("SAME")
+    if k == 0:
+        rawCalibrationConstant = funcFit.GetParameter(0)
+    else:
+        temperatureCorrectedCalibrationConstant = funcFit.GetParameter(0)
+
+    if canvas and iPad2:
+        t3 = ROOT.TPaveText(.15, .65, .7, .88, "NDC")
+        t3.SetLineColorAlpha(0,0)
+        t3.SetFillStyle(0)
+        t3.AddText("Calibration constant")
+        t3.AddText("%.0f ADC*ns/PE"%(funcFit.GetParameter(0)))
+        t3.SetTextAlign(12)
+        t3.DrawClone("SAME")
+    return nPEpeaks, rawCalibrationConstant if k == 0 else temperatureCorrectedCalibrationConstant, (peaks, peakserr)
+
+def CalculateCalibrationConstantsStock(nFEB, pedestals, rawCalibHist, temperatureCorrectedCalibHist, nPEpeaksToFit, canvas = None):
 # adaption of calibCrv::CrvEvent::CalculateCalibrationConstants for testing purposes
+    deadChannels = [[False]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    noPedestal = [[False]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    noCalibration = [[False]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    nPEpeaks = [[0]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    rawCalibrationConstant = [[np.nan]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    temperatureCorrectedCalibrationConstant = [[np.nan]*geometry_constants.nChannelPerFEB for i in range(nFEB)]
+    
+    calibHist = [rawCalibHist, temperatureCorrectedCalibHist]
+            
     for iFEB in range(nFEB):
         for iCh in range(geometry_constants.nChannelPerFEB):
-
-
             
+            # temperatureHist omitted
+
+            if pedestals[iFEB][iCh] is None:
+                noPedestal[iFEB][iCh] = True
+                continue
             
-      if(_temperatureHist[index]->GetN()>0)
-      {
-        _canvas[index]->cd(2);
-        gPad->cd(1);
-        _temperatureHist[index]->Draw("AP");
-      }
+            if rawCalibHist[iFEB][iCh].GetEntries()<200:
+                deadChannels[iFEB][iCh] = True
+                continue
 
-      _deadChannels[index]=false;
-      _noPedestal[index]=false;
-
-      if(isnan(_pedestals[index]))
-      {
-        _noPedestal[index]=true;
-        _canvas[index]->Print(pdfFileName.c_str(), "pdf");
-        continue;
-      }
-
-      if(_calibVector[0][index]._calibrationHist->GetEntries()<200)
-      {
-        _deadChannels[index]=true;
-        _canvas[index]->Print(pdfFileName.c_str(), "pdf");
-        continue;
-      }
-
-      for(int k=0; k<2; ++k) //k=0: no temperature correction, k=1: temperature correction
-      {
-        calibStruct &CS =_calibVector[k][index];
-        CS._noCalibration=true;
-        CS._nPEpeaks=0;
-        CS._noiseRate=0;
-        CS._xtalkProbability=0;
-        CS._calibrationConstant=0;
-
-        if(k==1 && _calibVector[k][index]._calibrationHist->GetEntries()<200)
-        {
-          CS._noCalibration=true;
-          _canvas[index]->Print(pdfFileName.c_str(), "pdf");
-          continue;
-        }
-
-        //Calibration plot
-        _canvas[index]->cd(k+3);
-        gPad->SetLogy();
-        CS._calibrationHist->SetLineColor(kBlue);
-        CS._calibrationHist->DrawClone("");
-
-        int maxbin = 0;
-        double maxbinContent = 0;
-        for(int bin=1; bin<CS._calibrationHist->GetNbinsX(); bin++)
-        {
-          if(CS._calibrationHist->GetBinCenter(bin)<250) continue;   //find 1PE maximum only between 350 and 1100
-          if(CS._calibrationHist->GetBinCenter(bin)>1500) break;     //1100
-          double binContent = CS._calibrationHist->GetBinContent(bin);
-          if(binContent>maxbinContent)
-          {
-            maxbin=bin;
-            maxbinContent=binContent;
-          }
-        }
-
-        double peak1PE = CS._calibrationHist->GetBinCenter(maxbin);
-        TF1 func1("f1", "gaus",peak1PE*0.8,peak1PE*1.2);
-        func1.SetParameter(1,peak1PE);
-        func1.SetLineWidth(1);
-        func1.SetLineColor(kRed);
-        CS._calibrationHist->Fit(&func1, "QR");
-        peak1PE = func1.GetParameter(1);
-
-        std::vector<double> peaks;
-        if(peak1PE>200.0 && peak1PE<1800.0)
-        {
-          peaks.push_back(peak1PE);
-          func1.DrawClone("same");
-          for(int iPeak=2; iPeak<=nPEpeaksToFit; ++iPeak)
-          {
-            double peakTmp = iPeak*peak1PE;
-            double rangeStart = peakTmp-0.35*peak1PE;
-            double rangeEnd = peakTmp+0.35*peak1PE;
-            if(rangeEnd>CS._calibrationHist->GetXaxis()->GetXmax()) break;
-            if(CS._calibrationHist->Integral(CS._calibrationHist->FindFixBin(rangeStart),CS._calibrationHist->FindFixBin(rangeEnd))<50) break;
-            TF1 func2(Form("f%i",iPeak), "gaus",rangeStart,rangeEnd);
-            func2.SetParameter(1,peakTmp);
-            func2.SetLineWidth(1);
-            func2.SetLineColor(kRed);
-            if((int)CS._calibrationHist->Fit(&func2, "QR")!=0) break;
-            peakTmp = func2.GetParameter(1);
-            if(peakTmp/peak1PE>iPeak*0.95 && peakTmp/peak1PE<iPeak*1.05)
-            {
-              peaks.push_back(peakTmp);
-              func2.DrawClone("same");
-            }
-            else break;
-          }
-        }
-        CS._nPEpeaks=peaks.size();
-
-        TPaveText t2(.50, .65, .89, .89, "NDC");
-        t2.SetFillColor(0);
-        for(size_t iPeak=0; iPeak<peaks.size(); ++iPeak)
-        {
-          t2.AddText(Form("%luPE = %4.0lf ADC*ns", iPeak+1,peaks[iPeak]));
-        }
-
-        if(k==1)
-        {
-          t2.AddText("Temperature corrected values");
-          t2.AddText(Form("refT %.1f deg C, calibT0 %.1f deg C",_referenceTemperature,_calibTemperatureIntercept));
-        }
-
-        if(peaks.empty())
-        {
-          t2.DrawClone("SAME");
-          if(k==1) _canvas[index]->Print(pdfFileName.c_str(), "pdf");
-          continue;
-        }
-
-        //cross-talk and noise
-        double events1PEandMore=0;
-        double events2PEandMore=0;
-        for(int bin=1; bin<CS._calibrationHist->GetNbinsX(); bin++)
-        {
-          double area = CS._calibrationHist->GetBinCenter(bin);
-          double binContent = CS._calibrationHist->GetBinContent(bin);
-          if(area>0.5*peak1PE) events1PEandMore+=binContent;
-          if(area>1.5*peak1PE) events2PEandMore+=binContent;
-        }
-
-        CS._noiseRate=events1PEandMore/(_nPreSignalRegions[index]*_numberOfPreSignalSamples/(RATE*1e9));
-        CS._xtalkProbability=events2PEandMore/events1PEandMore;
-        t2.AddText(Form("Noise rate = %4.2lf MHz", CS._noiseRate/1.0e6));
-        t2.AddText(Form("Xtalk prob. = %4.2lf", CS._xtalkProbability));
-        t2.DrawClone("SAME");
-
-        //Fit plot to determine calibration constants
-        _canvas[index]->cd(2);  //pad for temperature and calib fits
-        gPad->cd(2);  //pad for both calib fits
-        gPad->cd(k+1);  //non-temperature corrected and temperature corrected calib fits
-        gPad->SetLogy(0);
-
-        TGraph *graph=new TGraph();
-        graph->SetPoint(0,0,0);
-        for(size_t iPeak=0; iPeak<peaks.size(); ++iPeak) graph->SetPoint(iPeak+1,iPeak+1,peaks[iPeak]);
-        if(k==0) graph->SetTitle(Form("FEB%i Ch%i Calib. Fit; n PE peak; Area [ADC*ns]",i,j));
-        else graph->SetTitle(Form("FEB%i Ch%i Temp. corrected calib fit; n PE peak; Area [ADC*ns]",i,j));
-        graph->GetXaxis()->SetRangeUser(0, peaks.size()+0.5);
-        graph->GetYaxis()->SetRangeUser(0, peaks[0]*(peaks.size()+0.5));
-        graph->SetMarkerStyle(20);
-        graph->SetMarkerColor(kBlack);
-        graph->Draw("AP");
-
-        TF1 funcFit("calibration","[0]*x", -0.5, peaks.size()+0.5);
-        funcFit.SetLineColor(kRed);
-        graph->Fit(&funcFit, "QR");
-        funcFit.DrawClone("SAME");
-        CS._calibrationConstant = funcFit.GetParameter(0);
-
-        TPaveText t3(.15, .65, .7, .88, "NDC");
-        t3.SetLineColorAlpha(0,0);
-        t3.SetFillStyle(0);
-        t3.AddText("Calibration constant");
-        t3.AddText(Form("%.0lf ADC*ns/PE", CS._calibrationConstant));
-        t3.SetTextAlign(12);
-        t3.DrawClone("SAME");
-
-        if(k==1) _canvas[index]->Print(pdfFileName.c_str(), "pdf");
-      }
-    }
-  }
-}
-'''
+            for k in range(2):
+                # omitted noiseRate, xtalkProbability
+                if calibHist[k] is None:
+                    continue
+                
+                if k == 1 and temperatureCorrectedCalibHist[iFEB][iCh].GetEntries()<200:
+                    noCalibration[iFEB][iCh] = True
+                    continue
+                
+                # calibration plot
+                nn, cc, _ = CalculateCalibrationConstantSingleChannel(calibHist[k][iFEB][iCh], nPEpeaksToFit, iFEB, iCh, canvas, 1+4*(iFEB*geometry_constants.nChannelPerFEB+iCh)+2*k, 2+4*(iFEB*geometry_constants.nChannelPerFEB+iCh)+2*k, k)
+                nPEpeaks[iFEB][iCh] = nn
+                if k == 0:
+                    rawCalibrationConstant[iFEB][iCh] = cc
+                else:
+                    temperatureCorrectedCalibrationConstant[iFEB][iCh] = cc
+    
+    return rawCalibrationConstant, temperatureCorrectedCalibrationConstant
+                    

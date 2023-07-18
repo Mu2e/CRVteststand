@@ -101,6 +101,8 @@ class crv_spill:
             self.tsEpoch = spilltree.spill_timestamp
             if self.tsEpoch == 0:
                 self.tsEpoch = None
+            else:
+                root_utils.lastTsEpoch = (self.spillNumber, self.tsEpoch)
 
         if self.tsEpoch == None:
             if spilltree.spill_timestamp_year != 0:
@@ -114,13 +116,13 @@ class crv_spill:
                                            1 + spilltree.spill_timestamp_yday, # tm_yday
                                            spilltree.spill_timestamp_isdst])  # tm_isdst
 
-                self.tsEpoch = time.mktime(raw_dt)
+                self.tsEpoch = int(time.mktime(raw_dt))
                 # use "datetime.fromtimestamp(self.tsEpoch)" to convert to datetime objects
                 
                 root_utils.lastTsEpoch = (self.spillNumber, self.tsEpoch)
             else: 
                 if root_utils.lastTsEpoch and self.spillNumber>root_utils.lastTsEpoch[0]:
-                    self.tsEpoch = root_utils.lastTsEpoch[1]+float(self.spillNumber-root_utils.lastTsEpoch[0])*(constants.timeDataSpill_cosmic if isCosmic else constants.timeDataSpill_led)
+                    self.tsEpoch = int(root_utils.lastTsEpoch[1]+float(self.spillNumber-root_utils.lastTsEpoch[0])*(constants.timeDataSpill_cosmic if isCosmic else constants.timeDataSpill_led))
                 else:
                     # sys.exit("Error: CRV_spill: spill # %i reading spill timestamp unsuccessful! \n"%self.spillNumber +
                     #          "                  last good timestamp at spill # %i: %i"%(root_utils.lastTsEpoch if root_utils.lastTsEpoch else (-1,-1)))
@@ -131,7 +133,7 @@ class crv_spill:
         averageTemp = None
         nEvent = self.nEventsActual            
         if nEvent == 0:
-            print("*** WARNING: CRV_spill: getTempCMB: Spill # %i has no actual event"%self.spillNumber)
+            # print("*** WARNING: CRV_spill: getTempCMB: Spill # %i has no actual event"%self.spillNumber)
             averageTemp = np.empty((nFEBFile,geometry_constants.nChannelPerFEB,), dtype=np.float64)
             averageTemp[:] = np.nan
         else:
