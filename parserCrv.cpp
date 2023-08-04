@@ -157,7 +157,7 @@ void EventTree::Clear()
     _tdcSinceSpill[i]=0;
     _timeSinceSpill[i]=0;
     _biasVoltage[i]=0;
-    _temperature[i]=0;
+    _temperature[i]=-1000;
   }
   for(int i=0; i<_numberOfFebs*_channelsPerFeb*_numberOfSamples; i++) _adc[i]=0;
 }
@@ -409,7 +409,11 @@ bool EventTree::ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatur
     _binary=binaryTmp;
     for(int iCMB=0; iCMB<4; ++iCMB)
     {
-      for(int i=0; i<4; ++i) temperatureTmp[16*iFPGA+4*iCMB+i]=buffer[8+iCMB]*0.062;
+      for(int i=0; i<4; ++i)
+      {
+        temperatureTmp[16*iFPGA+4*iCMB+i]=buffer[8+iCMB]/16.0;
+        if((buffer[8+iCMB]>>11) & 1) temperatureTmp[16*iFPGA+4*iCMB+i]-=4096.0;
+      }
     }
 
     if(!getline(_inFile, line)) return false;  //for EOL at 2nd line
