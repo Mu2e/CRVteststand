@@ -39,7 +39,8 @@ const double RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
 class CrvEvent
 {
   public:
-  CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples);
+  CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples,
+           const double noiseThreshold, const double calibTemperatureSlope, const double referenceTemperature);
   void     FillPedestalHistograms(int entry);
   void     CalculatePedestal(double pedestalCorrection);
   void     FillCalibrationHistograms(int entry);
@@ -51,15 +52,15 @@ class CrvEvent
   CrvEvent();
 
   int _numberOfPreSignalSamples;
-  double _noiseThreshold;
-  double _calibTemperatureIntercept;
-  double _referenceTemperature;
-
   int _numberOfFebs;
   int _channelsPerFeb;
   int _numberOfSamples;
   
   TTree *_tree;
+
+  double _noiseThreshold;
+  double _calibTemperatureSlope;
+  double _referenceTemperature;
 
   int     _spillIndex;
   int    *_lastSpillIndex;
@@ -93,25 +94,11 @@ class CrvEvent
   std::vector<calibStruct> _calibVector[2];
 
 };
-CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples) :
-                   _numberOfPreSignalSamples(preSignalSamples), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _tree(tree)
+CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples, 
+                   const double noiseThreshold, const double calibTemperatureSlope, const double referenceTemperature) :
+                   _numberOfPreSignalSamples(preSignalSamples), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _tree(tree),
+                   _noiseThreshold(noiseThreshold), _calibTemperatureSlope(calibTemperatureSlope), _referenceTemperature(referenceTemperature)
 {
-  std::ifstream configFile;
-  configFile.open("config.txt");
-  if(!configFile.is_open()) {std::cerr<<"Could not open config.txt."<<std::endl; exit(1);}
-
-  _noiseThreshold=5.0;
-  _calibTemperatureIntercept=-1.0;
-  _referenceTemperature=25.0;
-  std::string configKey, configValue;
-  while(configFile>>configKey>>configValue)
-  {
-    if(configKey=="calibNoiseThreshold") _noiseThreshold=atof(configValue.c_str());
-    if(configKey=="calibTemperatureIntercept") _calibTemperatureIntercept=atof(configValue.c_str());
-    if(configKey=="referenceTemperature") _referenceTemperature=atof(configValue.c_str());
-  }
-  if(_calibTemperatureIntercept==-1.0) {std::cerr<<"calibTemperatureIntercept missing in config.txt"<<std::endl; exit(1);}
-
   _lastSpillIndex = new int[_numberOfFebs*_channelsPerFeb];
   _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
 //  _timeSinceSpill = new double[_numberOfFebs];  //OLD
@@ -359,10 +346,11 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
         double pulseArea = fr->Parameter(0)*fr->Parameter(2);
         _calibVector[0][index]._calibrationHist->Fill(pulseArea);
 
-        //temperature correction of noise pulse areai
-        if(_temperature[index]!=0)
+        //temperature correction of noise pulse area
+        //area(T) = area(Tref) + slope*(T-Tref)  where T is the measured temperature and Tref is 25 degC
+        if(_temperature[index]>-200)  //temperature of -1000 means no temperature found
         {
-          pulseArea*=(_calibTemperatureIntercept-_referenceTemperature)/(_calibTemperatureIntercept-_temperature[index]);
+          pulseArea-=_calibTemperatureSlope*(_temperature[index]-_referenceTemperature);  //this is now the area at the reference temperature of 25 degC
           _calibVector[1][index]._calibrationHist->Fill(pulseArea);
         }
 
@@ -405,7 +393,7 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
       }//peaks
 
       //fill temperature plot
-      if(_temperature[index]!=0 && _lastSpillIndex[index]!=_spillIndex)
+      if(_temperature[index]>-200 && _lastSpillIndex[index]!=_spillIndex)  //temperature of -1000 means no temperature found
       {
         _temperatureHist[index]->SetPoint(_temperatureHist[index]->GetN(),_spillIndex,_temperature[index]);
         _lastSpillIndex[index]=_spillIndex;
@@ -529,7 +517,7 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
         if(k==1)
         {
           t2.AddText("Temperature corrected values");
-          t2.AddText(Form("refT %.1f deg C, calibT0 %.1f deg C",_referenceTemperature,_calibTemperatureIntercept));
+          t2.AddText(Form("refT %.1f deg C, calibSlope %.1f ADC*ns/K",_referenceTemperature,_calibTemperatureSlope));
         }
 
         if(peaks.empty())
@@ -596,10 +584,10 @@ void CrvEvent::StorePedestalAndCalibrationConstants(std::ofstream &calibFile)
 {
   //new format / temperature corrected
   calibFile<<"calib v2  ";
-  calibFile<<"referenceTemperature: "<<_referenceTemperature<<" deg C  calibTemperatureIntercept: "<<_calibTemperatureIntercept<<" deg C"<<std::endl;
+  calibFile<<"referenceTemperature: "<<_referenceTemperature<<" deg C  calibTemperatureSlope: "<<_calibTemperatureSlope<<" ADC*ns/K"<<std::endl;
   calibFile<<"  FEB  Channel  Pedestal  Calib     CalibT"<<std::endl;
 
-  std::cout<<"referenceTemperature: "<<_referenceTemperature<<" deg C  calibTemperatureIntercept: "<<_calibTemperatureIntercept<<" deg C"<<std::endl;
+  std::cout<<"referenceTemperature: "<<_referenceTemperature<<" deg C  calibTemperatureSlope: "<<_calibTemperatureSlope<<" ADC*ns/K"<<std::endl;
   std::cout<<"         FEB  Channel  Pedestal  Calib     CalibT"<<std::endl;
 
   for(int i=0; i<_numberOfFebs; i++)
@@ -846,7 +834,7 @@ void CrvEvent::Summarize(const std::string &pdfFileName)
 }
 
 void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &pdfFileName,
-             int nPEpeaksToFit, int preSignalSamples, double pedestalCorrection)
+             int nPEpeaksToFit, int preSignalSamples, double pedestalCorrection, double noiseThreshold, double calibTemperatureSlope, double referenceTemperature)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -873,7 +861,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->SetBranchAddress("spill_number_of_samples", &numberOfSamples);
   treeSpills->GetEntry(0);  //to read the channelsPerFeb and numberOfSamples
 
-  CrvEvent event(numberOfFebs, channelsPerFeb, numberOfSamples, tree, preSignalSamples);
+  CrvEvent event(numberOfFebs, channelsPerFeb, numberOfSamples, tree, preSignalSamples, noiseThreshold, calibTemperatureSlope, referenceTemperature);
 
   int nEvents = tree->GetEntries();
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
@@ -953,12 +941,18 @@ void printHelp()
   std::cout<<"calibCrv RUNNUMBER [OPTIONS]  Calibrates a run."<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Options:"<<std::endl;
-  std::cout<<"-p   number of PE peaks fitted"<<std::endl;
-  std::cout<<"     default: 1"<<std::endl;
-  std::cout<<"-c   length of presignal region for the calibration"<<std::endl;
-  std::cout<<"     default: 60"<<std::endl;
-  std::cout<<"-a   correction to the pedestal"<<std::endl;
-  std::cout<<"     default: 0"<<std::endl;
+  std::cout<<"-p ###           number of PE peaks fitted"<<std::endl;
+  std::cout<<"                 default: 1"<<std::endl;
+  std::cout<<"-c ###           length of presignal region for the calibration"<<std::endl;
+  std::cout<<"                 default: 60"<<std::endl;
+  std::cout<<"-a ###           correction to the pedestal"<<std::endl;
+  std::cout<<"                 default: 0"<<std::endl;
+  std::cout<<"--noiseThreshold ###   peaks below this threshold (above pedestal) are ignored"<<std::endl;
+  std::cout<<"                       default: 5.0 ADC"<<std::endl;
+  std::cout<<"--calibTempSlope ###   temperature slope for calibration constant"<<std::endl;
+  std::cout<<"                       default: -7.0 ADC*ns/K"<<std::endl;
+  std::cout<<"--referenceTemp  ###   temperature to which the calibration constants are adjusted to"<<std::endl;
+  std::cout<<"                       default: 20.0 degC"<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -980,17 +974,24 @@ int main(int argc, char **argv)
   std::string pdfFileName;
   makeFileNames(runNumber, inFileName, calibFileName, pdfFileName);
 
-  int    nPEpeaksToFit = 1;
-  int    preSignalSamples = 60;
+  int    nPEpeaksToFit      = 1;
+  int    preSignalSamples   = 60;
   double pedestalCorrection = 0;
+  double noiseThreshold        = 5.0;   //ADC
+  double calibTemperatureSlope = -7.0;  //ADC*ns/K
+  double referenceTemperature  = 20.0;  //degC
   for(int i=2; i<argc-1; i++)
   {
     if(strcmp(argv[i],"-p")==0) nPEpeaksToFit=atoi(argv[i+1]);
     if(strcmp(argv[i],"-c")==0) preSignalSamples=atoi(argv[i+1]);
     if(strcmp(argv[i],"-a")==0) pedestalCorrection=atof(argv[i+1]);
+    if(strcmp(argv[i],"--noiseThreshold")==0) noiseThreshold=atof(argv[i+1]);
+    if(strcmp(argv[i],"--calibTempSlope")==0) calibTemperatureSlope=atof(argv[i+1]);
+    if(strcmp(argv[i],"--referenceTemp")==0)  referenceTemperature=atof(argv[i+1]);
   }
 
-  process(runNumber, inFileName, calibFileName, pdfFileName, nPEpeaksToFit, preSignalSamples, pedestalCorrection);
+  process(runNumber, inFileName, calibFileName, pdfFileName, nPEpeaksToFit, preSignalSamples, pedestalCorrection, 
+          noiseThreshold, calibTemperatureSlope, referenceTemperature);
 
   return 0;
 }
