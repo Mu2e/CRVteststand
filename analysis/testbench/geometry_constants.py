@@ -204,6 +204,18 @@ geom_dict_crvled003 = {
     'canvasSize'    : (8,8)
 }
 
+geom_dict_crvled004 = {
+    'tag'           : 'config_LED004',
+    'module'        : [],
+    'moduleOffsetX' : [],
+    'moduleOffsetY' : [],
+    'FEB'           : [],
+    'nFEB'          : 1,
+    'badChannels'   : [],
+    'triggerOnlyChs': [],
+    'canvasSize'    : (8,2)
+}
+
 # setup_dict can be used to retrieve geom dict (and number of FEBs) from the file names
 setup_dict = {'crvaging-001': [geom_dict_crvaging001],
               'crvaging-003': [geom_dict_crvaging003],
@@ -214,4 +226,5 @@ setup_dict = {'crvaging-001': [geom_dict_crvaging001],
               'crvaging-008': [geom_dict_crvaging008],
               'crvled-001'  : [geom_dict_crvled001],
               'crvled-002'  : [geom_dict_crvled002],
-              'crvled-003'  : [geom_dict_crvled003]}
+              'crvled-003'  : [geom_dict_crvled003],
+              'crvled-004'  : [geom_dict_crvled004]}

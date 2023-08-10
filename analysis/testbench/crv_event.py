@@ -82,6 +82,13 @@ class crv_event:
             self.spillNumber = runtree.runtree_spill_num if isRaw else runtree.spillNumber #runtree_spill_num/I or spillNumber/I
             self.eventNumber = runtree.runtree_event_num if isRaw else runtree.eventNumber #runtree_event_num/I or eventNumber/I
             self.temperature = np.reshape(np.array(runtree.runtree_temperature if isRaw else runtree.temperature, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #runtree_temperature[4][64]/L or temperature[4][64]/F
+            
+            # deals with negative temperatures, fix 0.062 vs 0.0625
+            self.temperature *= (0.0625/0.062)
+            for iFEB in range(nFEB):
+                for iCh in range(geometry_constants.nChannelPerFEB):
+                    if self.temperature[iFEB][iCh] > 4000.:
+                        self.temperature[iFEB][iCh] -= 4096.                    
             self.pedestal = None if isRaw else np.reshape(np.array(runtree.pedestal, dtype=np.float32), (nFEB, geometry_constants.nChannelPerFEB)) #pedestal[4][64]/F
             self.tdcSinceSpill = np.reshape(np.array(runtree.runtree_tdc_since_spill if isRaw else runtree.tdcSinceSpill, dtype=np.int64), (nFEB, geometry_constants.nChannelPerFEB)) #runtree_tdc_since_spill[4][64]/L or tdcSinceSpill[4][64]/L
             self.timeSinceSpill = np.reshape(np.array(runtree.runtree_time_since_spill if isRaw else runtree.timeSinceSpill, dtype=np.float64), (nFEB, geometry_constants.nChannelPerFEB)) #runtree_time_since_spill[4][64]/D or timeSinceSpill[4][64]/D
