@@ -79,7 +79,8 @@ datatag = { #updated to 1420. #FIXME: tag previous runs
               "run#": #[1299, 1300, 1301, 1302, 1308, 1309, 1310, 1311, 1312]+
                       [1312]+ # all others removed. Some are short run <100 spills; many dqc issues, missing CMB temp. etc.
                       [1315]+ # 22 degC
-                      [1327]}, # 15 degC
+                      [1327]+ # 15 degC
+                      [1341, 1354, 1370]},
           "LED_low_PE": {
               "type":"LED",
               "config":"crvled-001",
