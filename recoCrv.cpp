@@ -36,7 +36,20 @@
 const float CRV_TDC_RATE    = 159.324e6;  // Hz
 const float RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
 const int BOARD_STATUS_REGISTERS=22;
+const int FPGA_BLOCK_REGISTERS=38;
+const int FPGA_BLOCKS=4;
 const float DEFAULT_BETA=16.0;
+
+struct TemperatureCorrections
+{
+  double PEOvervoltageChange{0.229}; //1/V
+  double calibOvervoltageChange{125.5};   //ADC*ns/V
+  double calibTemperatureChangeAFE{-1.46};  //ADC*ns/K  additional calib change due to temperature change in AFE
+  double overvoltageTemperatureChangeCMB{-0.0554};  //V/K
+  double overvoltageTemperatureChangeFEB{0.00409};  //V/K
+  double referenceTemperatureCMB{20.0};   //degC
+  double referenceTemperatureFEB{40.0};   //degC
+};
 
 class Calibration
 {
@@ -295,7 +308,7 @@ class CrvEvent
 {
   public:
   CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, 
-           TTree *tree, TTree *recoTree, double PETemperatureSlope, double calibTemperatureSlope, double referenceTemperature);
+           TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections);
   void     Reconstruct(int entry, const Calibration &calib);
   TCanvas *GetCanvas(int feb, int channel) {return _canvas[feb*_channelsPerFeb+channel];}
   TH1F    *GetHistPEs(int i, int feb, int channel) 
@@ -303,9 +316,7 @@ class CrvEvent
              return (i==0?_histPEs[feb*_channelsPerFeb+channel]:_histPEsTemperatureCorrected[feb*_channelsPerFeb+channel]);
            }
   TGraph  *GetHistTemperatures(int feb, int channel) {return _histTemperatures[feb*_channelsPerFeb+channel];}
-  float    GetReferenceTemperature() {return _referenceTemperature;}
-  float    GetPETemperatureSlope() {return _PETemperatureSlope;}
-  float    GetCalibTemperatureSlope() {return _calibTemperatureSlope;}
+  TGraph  *GetHistTemperaturesFEB(int feb, int channel) {return _histTemperaturesFEB[feb*_channelsPerFeb+channel];}
 
   private:
   CrvEvent();
@@ -323,9 +334,7 @@ class CrvEvent
   TTree *_tree;
   TTree *_recoTree;
 
-  float _PETemperatureSlope;
-  float _calibTemperatureSlope;
-  float _referenceTemperature;
+  const TemperatureCorrections _tc;
 
   int     _spillIndex;
   int     _spillNumber;
@@ -337,6 +346,7 @@ class CrvEvent
   short  *_adc;
   float  *_temperature;
   int    *_boardStatus;
+  int    *_FPGABlocks;
   Long64_t  _timestamp;  //time_t
 
   int    *_fitStatus;
@@ -364,11 +374,12 @@ class CrvEvent
   std::vector<int>      _plot;
   std::vector<TH1F*>    _histPEs, _histPEsTemperatureCorrected;
   std::vector<TGraph*>  _histTemperatures;
+  std::vector<TGraph*>  _histTemperaturesFEB;
 };
 CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples,
-                   TTree *tree, TTree *recoTree, double PETemperatureSlope, double calibTemperatureSlope, double referenceTemperature) : 
+                   TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections) : 
                    _runNumber(runNumber), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), 
-                   _tree(tree), _recoTree(recoTree), _PETemperatureSlope(PETemperatureSlope), _calibTemperatureSlope(calibTemperatureSlope), _referenceTemperature(referenceTemperature)
+                   _tree(tree), _recoTree(recoTree), _tc(temperatureCorrections)
 {
   std::ifstream configFile;
   configFile.open("config.txt");
@@ -389,6 +400,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
   _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
+  _FPGABlocks     = new int[_numberOfFebs*FPGA_BLOCKS*FPGA_BLOCK_REGISTERS];
 
   tree->SetBranchAddress("runtree_run_num", &_run);
   tree->SetBranchAddress("runtree_subrun_num", &_subrun);
@@ -400,6 +412,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   tree->SetBranchAddress("runtree_adc", _adc);
   tree->SetBranchAddress("runtree_temperature", _temperature);
   tree->SetBranchAddress("runtree_boardStatus", _boardStatus);
+  tree->SetBranchAddress("runtree_FPGABlocks", _FPGABlocks);
   tree->SetBranchAddress("runtree_spillTimestamp", &_timestamp);
 
   _fitStatus               = new int[_numberOfFebs*_channelsPerFeb];
@@ -428,6 +441,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("spillIndex", &_spillIndex, "spillIndex/I");
   recoTree->Branch("spillNumber", &_spillNumber, "spillNumber/I");
   recoTree->Branch("boardStatus", _boardStatus, Form("boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
+  recoTree->Branch("FPGABlocks", _FPGABlocks, Form("FPGABlocks[%i][%i][%i]/I",_numberOfFebs,FPGA_BLOCKS,FPGA_BLOCK_REGISTERS));
   recoTree->Branch("spillTimestamp", &_timestamp, "spillTimestamp/L");
   recoTree->Branch("eventNumber", &_eventNumber, "eventNumber/I");
   recoTree->Branch("tdcSinceSpill", _tdcSinceSpill, Form("tdcSinceSpill[%i][%i]/L",_numberOfFebs,_channelsPerFeb));
@@ -459,6 +473,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _histPEs.resize(_numberOfFebs*_channelsPerFeb);
   _histPEsTemperatureCorrected.resize(_numberOfFebs*_channelsPerFeb);
   _histTemperatures.resize(_numberOfFebs*_channelsPerFeb);
+  _histTemperaturesFEB.resize(_numberOfFebs*_channelsPerFeb);
   for(int i=0; i<_numberOfFebs; i++)
   {
     for(int j=0; j<_channelsPerFeb; j++)
@@ -475,10 +490,13 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
       }
       _canvas[index]->cd(3);
       gPad->Divide(2,2);
+      _canvas[index]->cd(4);
+      gPad->Divide(1,2);
 
-      _histPEs[index]=new TH1F(Form("h0_%i",index),Form("PE Distribution Run %s FEB %i Channel %i;PE;Counts",_runNumber.c_str(),i,j),150,0,150);
-      _histPEsTemperatureCorrected[index]=new TH1F(Form("h1_%i",index),Form("PE Distribution Run %s FEB %i Channel %i;PE;Counts",_runNumber.c_str(),i,j),150,0,150);
+      _histPEs[index]=new TH1F(Form("PEs_%i_%i",i,j),Form("PE Distribution Run %s FEB %i Channel %i;PE;Counts",_runNumber.c_str(),i,j),75,0,150);
+      _histPEsTemperatureCorrected[index]=new TH1F(Form("PEsTempCorrected_%i_%i",i,j),Form("PE Distribution (temp. corrected) Run %s FEB %i Channel %i;PE;Counts",_runNumber.c_str(),i,j),75,0,150);
       _histTemperatures[index]=new TGraph();
+      _histTemperaturesFEB[index]=new TGraph();
 
       _histPEs[index]->SetLineColor(kBlack);
       _histPEsTemperatureCorrected[index]->SetLineColor(kBlack);
@@ -486,6 +504,10 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
       _histTemperatures[index]->SetMarkerSize(0.5);
       _histTemperatures[index]->SetMarkerColor(kBlack);
       _histTemperatures[index]->SetNameTitle(Form("hT_%i",index),Form("Temperature Run %s FEB %i Channel %i;Spill;Temperature [deg C]",_runNumber.c_str(),i,j));
+      _histTemperaturesFEB[index]->SetMarkerStyle(20);
+      _histTemperaturesFEB[index]->SetMarkerSize(0.5);
+      _histTemperaturesFEB[index]->SetMarkerColor(kBlack);
+      _histTemperaturesFEB[index]->SetNameTitle(Form("hTFEB_%i",index),Form("FEB Temperature Run %s FEB %i Channel %i;Spill;Temperature [deg C]",_runNumber.c_str(),i,j));
     }
   }
 }
@@ -524,17 +546,29 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
       _PEs[index]                     = reco._PEs[0];
       _PEsTemperatureCorrected[index] = -1;
 
-      if(_temperature[index]>-200) //temperature of -1000 means no temperature found
+      double temperatureFEB=-1000;
+      if(_boardStatus[i*BOARD_STATUS_REGISTERS]!=-1) //i-th FEB was read for this spill
       {
+        //temperature of i-th FEB
+        temperatureFEB=_boardStatus[i*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
+      }
+
+      if(_temperature[index]>-300 && temperatureFEB>-300) //temperature of -1000 means no temperature found
+      {
+        //overvoltage difference for actual CMB and FEB temperatures w.r.t. reference CMB and FEB temperatures
+        //deltaOvervoltage = overvoltageTemperatureChangeCMB*(TCMB-TrefCMB) + overvoltageTemperatureChangeFEB*(TFEB-TrefFEB)
+        float deltaOvervoltage = _tc.overvoltageTemperatureChangeCMB*(_temperature[index]-_tc.referenceTemperatureCMB)
+                               + _tc.overvoltageTemperatureChangeFEB*(temperatureFEB-_tc.referenceTemperatureFEB);
+
         _PEsTemperatureCorrected[index] = reco._PEs[0];
 
-        if(calib.IsNewFormat() && calibrationFactorTemperatureCorrected!=0)
+        if(calib.IsNewFormat() && calibrationFactorTemperatureCorrected!=0) //The old calib format doesn't have temperature-corrected calib constants.
         {
-          //The old calib format doesn't have temperature-corrected calib constants.
-          //The stored temperature corrected calibration constants were adjusted to the reference temperature Tref of 25 degC.
+          //The stored temperature corrected calibration constants were adjusted to CMB/FEB reference temperatures TrefCMB/TrefFEB of e.g. 20 degC / 40 degC.
           //The calibration constant needs to be adjusted to the temperature T at which the signal pulse happened.
-          //calibConst(T) = calibConst(Tref) + calibSlope*(T-Tref)
-          float calibrationFactorAtT = calibrationFactorTemperatureCorrected + _calibTemperatureSlope*(_temperature[index]-_referenceTemperature);
+          //calibConst(TCMB,TFEB) = calibConst(TrefCMB,TrefFEB) + calibOvervoltageChange*deltaOvervoltage(TCMB,TFEB) + calibTempChangeAFE*(TFEB-TrefFEB)
+          float calibrationFactorAtT = calibrationFactorTemperatureCorrected + _tc.calibOvervoltageChange*deltaOvervoltage
+                                                                             + _tc.calibTemperatureChangeAFE*(temperatureFEB-_tc.referenceTemperatureFEB);
           //The PeakFitter used the un-corrected calibration factor to calculate the PEs
           //This needs to be undone first to get the pulse area
           //pulseArea = PEsFromPeakFitter * uncorrectedCalibrationFactor
@@ -542,9 +576,9 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
           _PEsTemperatureCorrected[index]*=calibrationFactor/calibrationFactorAtT;
         }
 
-        //Now the PEs that were measured at a particular temperature need to be adjusted to the reference temperature of 25 degC
-        //PE(T)/PE(Tref) = 1.0 + PESlope*(T-Tref)
-        _PEsTemperatureCorrected[index]/=1.0 + _PETemperatureSlope*(_temperature[index]-_referenceTemperature);
+        //The PEs that were measured at a particular temperature need to be adjusted to the reference temperature of e.g. 20 degC
+        //PE(TCMB,TFEB)/PE(TrefCMB,TrefFEB) = 1.0 + PEOvervoltageChange*deltaOvervoltage(TCMB,TFEB)
+        _PEsTemperatureCorrected[index]/=1.0 + _tc.PEOvervoltageChange*deltaOvervoltage;
       }
 
       _pulseHeight[index]             = reco._pulseHeight[0];
@@ -561,15 +595,18 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
       _fitStatusReflectedPulse[index]               = reco._fitStatus[1];
       _PEsReflectedPulse[index]                     = reco._PEs[1];
       _PEsTemperatureCorrectedReflectedPulse[index] = -1;
-      if(_temperature[index]>-200) //temperature of -1000 means no temperature found
+      if(_temperature[index]>-300 && temperatureFEB>-300) //temperature of -1000 means no temperature found
       {
+        float deltaOvervoltage = _tc.overvoltageTemperatureChangeCMB*(_temperature[index]-_tc.referenceTemperatureCMB)
+                               + _tc.overvoltageTemperatureChangeFEB*(temperatureFEB-_tc.referenceTemperatureFEB);
         _PEsTemperatureCorrectedReflectedPulse[index] = reco._PEs[1];
         if(calib.IsNewFormat() && calibrationFactorTemperatureCorrected!=0)
         {
-          float calibrationFactorAtT = calibrationFactorTemperatureCorrected + _calibTemperatureSlope*(_temperature[index]-_referenceTemperature);
+          float calibrationFactorAtT = calibrationFactorTemperatureCorrected + _tc.calibOvervoltageChange*deltaOvervoltage
+                                                                             + _tc.calibTemperatureChangeAFE*(temperatureFEB-_tc.referenceTemperatureFEB);
           _PEsTemperatureCorrectedReflectedPulse[index]*=calibrationFactor/calibrationFactorAtT;
         }
-        _PEsTemperatureCorrectedReflectedPulse[index]/=1.0 + _PETemperatureSlope*(_temperature[index]-_referenceTemperature);
+        _PEsTemperatureCorrectedReflectedPulse[index]/=1.0 + _tc.PEOvervoltageChange*deltaOvervoltage;
       }
       _pulseHeightReflectedPulse[index]             = reco._pulseHeight[1];
       _betaReflectedPulse[index]                    = reco._beta[1];
@@ -584,9 +621,11 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
         _histPEs[index]->Fill(reco._PEs[0]);
         _histPEsTemperatureCorrected[index]->Fill(_PEsTemperatureCorrected[index]);
       }
-      if(_temperature[index]>-200 && _lastSpillIndex[index]!=_spillIndex) //temperature of -1000 means no temperature found
+      if(_temperature[index]>-300 && _lastSpillIndex[index]!=_spillIndex) //temperature of -1000 means no temperature found
       {
         _histTemperatures[index]->SetPoint(_histTemperatures[index]->GetN(),_spillIndex,_temperature[index]);
+        double temperatureFEB=_boardStatus[i*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
+        _histTemperaturesFEB[index]->SetPoint(_histTemperaturesFEB[index]->GetN(),_spillIndex,temperatureFEB);
         _lastSpillIndex[index]=_spillIndex;
       }
     }
@@ -648,7 +687,7 @@ double LandauGaussFunction(double *x, double *par)
 
     return (par[2] * step * sum * invsq2pi / par[3]);
 }
-void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals)
+void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
 {
     float maxX=0;
     float maxValue=0;
@@ -660,14 +699,14 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals)
     if(maxValue<20) return;
 
     //Fit range
-    Double_t fitRangeStart=0.7*maxX;
-    Double_t fitRangeEnd  =1.5*maxX;
-    if(maxValue<50)
-    {
-      fitRangeStart=0.5*maxX;
-      fitRangeEnd  =1.7*maxX;
-    }
+    Double_t fitRangeStart=25.0;
+    Double_t fitRangeEnd  =110.0; //100 @ 13  //110 @ 14
+//    Double_t fitRangeEnd  =h.GetXaxis()->GetXmax();
+/*
+    Double_t fitRangeStart=0.6*maxX;
+    Double_t fitRangeEnd  =2.0*maxX;
     if(fitRangeStart<12.0) fitRangeStart=12.0;
+*/
 
     //Parameters 
     Double_t startValues[4], parLimitsLow[4], parLimitsHigh[4];
@@ -680,25 +719,28 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals)
     parLimitsLow[2]=0.01*startValues[2];
     parLimitsHigh[2]=100*startValues[2];
     //Other parameters
-    startValues[0]=4.0;   startValues[3]=8.0;
-    parLimitsLow[0]=1.0;  parLimitsLow[3]=1.0;
-    parLimitsHigh[0]=20.0; parLimitsHigh[3]=20.0;
+    startValues[0]=4.5;   startValues[3]=11.0;
+    parLimitsLow[0]=2.0;  parLimitsLow[3]=5.0;  //3 and 8
+    parLimitsHigh[0]=10.0; parLimitsHigh[3]=20.0;   //7 and 15 @ 13  //6 and 14 @ 14
 
     TF1 fit("LandauGauss",LandauGaussFunction,fitRangeStart,fitRangeEnd,4);
     fit.SetParameters(startValues);
     fit.SetLineColor(kRed);
     fit.SetParNames("Width","MP","Area","GSigma");
     for(int i=0; i<4; i++) fit.SetParLimits(i, parLimitsLow[i], parLimitsHigh[i]);
-    h.Fit(&fit,"QR");
+    TFitResultPtr fr = h.Fit(&fit,"QRS");
     fit.Draw("same");
 
     mpv = fit.GetMaximumX();
+    chi2 = fr->Chi2();
     if(mpv==fitRangeStart) {mpv=0; return;}
     float halfMaximum = fit.Eval(mpv)/2.0;
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = h.Integral(12,150);
+    signals = h.Integral(10,150);
+
+std::cout<<h.GetName()<<"    "; for(int i=0; i<4; ++i) std::cout<<fit.GetParameter(i)<<"  "; std::cout<<"             "<<chi2<<std::endl;
 }
 double PoissonFunction(double *x, double *par)
 {
@@ -712,7 +754,7 @@ double PoissonFunction(double *x, double *par)
     const double scaledX=x[0]*par[2];
     return par[0]*TMath::Exp(scaledX * log(par[1]) - TMath::LnGamma(scaledX + 1.) - par[1]);
 }
-void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals)
+void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
 {
     float maxX=0;
     float maxValue=0;
@@ -723,9 +765,13 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals)
     if(maxValue<20) return;
 
     //Fit range
-    Double_t fitRangeStart=0.6*maxX;
-    Double_t fitRangeEnd  =1.4*maxX;
+    Double_t fitRangeStart=10.0;
+    Double_t fitRangeEnd  =h.GetXaxis()->GetXmax();
+/*
+    Double_t fitRangeStart=0.7*maxX;
+    Double_t fitRangeEnd  =1.5*maxX;
     if(fitRangeStart<12.0) fitRangeStart=12.0;
+*/
 
     TF1 fit("Poisson",PoissonFunction,fitRangeStart,fitRangeEnd,3);
     fit.SetParameter(0,maxValue/TMath::Poisson(maxX,maxX));  //"height" of the function
@@ -733,16 +779,17 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals)
     fit.SetParameter(2,1.0);    //horizontal (x) scaling factor
     fit.SetLineColor(kRed);
     fit.SetParNames("Const","mean");
-    h.Fit(&fit,"QR");
+    TFitResultPtr fr = h.Fit(&fit,"QRS");
     fit.Draw("same");
 
     mpv = fit.GetMaximumX();
+    chi2 = fr->Chi2();
     if(mpv==fitRangeStart) {mpv=0; return;}
     float halfMaximum = fit.Eval(mpv)/2.0;
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = h.Integral(12,150);
+    signals = h.Integral(10,150);
 }
 
 void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
@@ -871,9 +918,9 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 }
 
 void StorePEyields(const std::string &runNumber, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
-                   const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2],
+                   const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2], const std::vector<float> chi2s[2],
                    const std::vector<float> &meanTemperatures, const std::vector<float> &stddevTemperatures, TTree *treeSpills, int nEventsActual, const Calibration &calib,
-                   double PETemperatureSlope, double calibTemperatureSlope, double referenceTemperature)
+                   const TemperatureCorrections &tc)
 {
   int   run=0;
   int   subrun=0;
@@ -893,6 +940,8 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   float *fwhmsTSummary = const_cast<float*>(fwhms[1].data());
   float *signalsSummary = const_cast<float*>(signals[0].data());
   float *signalsTSummary = const_cast<float*>(signals[1].data());
+  float *chi2sSummary = const_cast<float*>(chi2s[0].data());
+  float *chi2sTSummary = const_cast<float*>(chi2s[1].data());
   float *meanTemperaturesSummary = const_cast<float*>(meanTemperatures.data());
   float *stddevTemperaturesSummary = const_cast<float*>(stddevTemperatures.data());
   float *pedestals = const_cast<float*>(calib.GetPedestals().data());
@@ -918,6 +967,8 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   recoTreeSummary->Branch("FWHMsTemperatureCorrected", fwhmsTSummary, Form("FWHMsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("signals", signalsSummary, Form("signals[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("signalsTemperatureCorrected", signalsTSummary, Form("signalsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("chi2s", chi2sSummary, Form("chi2s[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("chi2sTemperatureCorrected", chi2sTSummary, Form("chi2sTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("meanTemperatures", meanTemperaturesSummary, Form("meanTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("stddevTemperatures", stddevTemperaturesSummary, Form("stddevTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("pedestals", pedestals, Form("pedestals[%i][%i]/F",numberOfFebs,channelsPerFeb));
@@ -939,14 +990,16 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   nSpillsActual=0; 
   BoardRegisters(treeSpills, txtFile, numberOfFebs, febID, nSpillsActual, nFebSpillsActual, febTemperaturesAvg, supplyMonitorsAvg, biasVoltagesAvg, pipeline, samples, timestamp);
 
-  txtFile<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
-  txtFile<<"calibTemperatureSlope: "<<calibTemperatureSlope<<" ADC*ns/K  ";
-  txtFile<<"PETemperatureSlope: "<<PETemperatureSlope<<" K^-1"<<std::endl;
+  txtFile<<"reference temp: "<<tc.referenceTemperatureCMB<<" deg C (CMB), "<<tc.referenceTemperatureFEB<<" deg C (FEB)   ";
+  txtFile<<"overvoltage: "<<tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
+  txtFile<<"calib: "<<tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)   ";
+  txtFile<<"PEs: "<<tc.PEOvervoltageChange<<" 1/V"<<std::endl;
   txtFile<<"  FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr"<<std::endl;
 
-  std::cout<<"referenceTemperature: "<<referenceTemperature<<" deg C  ";
-  std::cout<<"calibTemperatureSlope: "<<calibTemperatureSlope<<" ADC*ns/K  ";
-  std::cout<<"PETemperatureSlope: "<<PETemperatureSlope<<" K^-1"<<std::endl;
+  std::cout<<"reference temp: "<<tc.referenceTemperatureCMB<<" deg C (CMB), "<<tc.referenceTemperatureFEB<<" deg C (FEB)   ";
+  std::cout<<"overvoltage: "<<tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
+  std::cout<<"calib: "<<tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)   ";
+  std::cout<<"PEs: "<<tc.PEOvervoltageChange<<" 1/V"<<std::endl;
   std::cout<<"         FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr"<<std::endl;
 
   for(int i=0; i<numberOfFebs; i++)
@@ -1015,8 +1068,7 @@ std::string CreateSequenceString(const std::vector<int> channels)
   return sequence;
 }
 void Summarize(const std::string &pdfFileName, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb, 
-               const std::vector<float> mpvs[2], const std::vector<float> fwhms[2],
-               double PETemperatureSlope, double calibTemperatureSlope, double referenceTemperature)
+               const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const TemperatureCorrections &tc)
 {
   std::ifstream settingsFile;
   settingsFile.open("config.txt");
@@ -1118,8 +1170,10 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
   tT.SetTextColor(kBlack);
   tT.SetTextAlign(12);
   tT.AddText("Temperature corrected values");
-  tT.AddText(Form("refT %.1f deg C, PETempSlope %.4f K^-1",referenceTemperature, PETemperatureSlope));
-  tT.AddText(Form("calibTempSlope %.1f ADC*ns/K", calibTemperatureSlope));
+  tT.AddText(Form("reference temp %.1f deg C (CMB), %.1f deg C (FEB)",tc.referenceTemperatureCMB, tc.referenceTemperatureFEB));
+  tT.AddText(Form("overvoltage %.5f V/K (CMB), %.5f V/K (FEB)",tc.overvoltageTemperatureChangeCMB, tc.overvoltageTemperatureChangeFEB));
+  tT.AddText(Form("calib %.1f ADC*ns/V, calibAFE %.2f ADC*ns/K (FEB), PEs %.4f 1/V", tc.calibOvervoltageChange, tc.calibTemperatureChangeAFE, tc.PEOvervoltageChange));
+
   summaryCanvas.cd(3);
   tT.Draw("same");
   summaryCanvas.cd(4);
@@ -1193,7 +1247,7 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
 }
 
 void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &pdfFileName, const std::string &txtFileName,
-             bool usePoisson, double PETemperatureSlope, double calibTemperatureSlope, double referenceTemperature)
+             bool usePoisson, const TemperatureCorrections &tc)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -1220,7 +1274,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->GetEntry(0);  //to read the numberOfFebs, channelsPerFeb, and numberOfSamples
 
   Calibration calib(calibFileName, numberOfFebs, channelsPerFeb); 
-  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, PETemperatureSlope, calibTemperatureSlope, referenceTemperature);
+  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, tc);
 
   int nEvents = tree->GetEntries();
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
@@ -1235,6 +1289,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   std::vector<float> mpvs[2];
   std::vector<float> fwhms[2];
   std::vector<float> signals[2];
+  std::vector<float> chi2s[2];
   std::vector<float> meanTemperatures;
   std::vector<float> stddevTemperatures;
   for(int feb=0; feb<numberOfFebs; feb++)
@@ -1253,38 +1308,45 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         float mpv=0;
         float fwhm=0;
         float nsignals=0;
-        if(!usePoisson) LandauGauss(*h[i], mpv, fwhm, nsignals);
-        else Poisson(*h[i], mpv, fwhm, nsignals);
+        float chi2=0;
+        if(!usePoisson) LandauGauss(*h[i], mpv, fwhm, nsignals, chi2);
+        else Poisson(*h[i], mpv, fwhm, nsignals, chi2);
         mpvs[i].push_back(mpv);
         fwhms[i].push_back(fwhm);
         signals[i].push_back(nsignals);
+        chi2s[i].push_back(chi2);
 //        h[i]->GetXaxis()->SetRange(15,150);
         h[i]->Draw();
+        h[i]->Write();  //write to root file
 
-        t[i]=new TPaveText(0.65,0.65,0.85,0.75,"NDC");
+        t[i]=new TPaveText(0.65,0.58,0.88,0.70,"NDC");
         t[i]->SetFillColor(kWhite);
         t[i]->SetTextColor(kRed);
         t[i]->SetTextAlign(12);
         t[i]->AddText(Form("MPV: %.1f PEs",mpv));
         t[i]->AddText(Form("FWHM: %.1f PEs",fwhm));
         t[i]->AddText(Form("Signals: %.0f",nsignals));
+        t[i]->AddText(Form("Chi2: %.1f",chi2));
         t[i]->Draw("same");
-      }    
+      } 
 
       event.GetCanvas(feb, channel)->cd(2);
-      TPaveText tt(0.45,0.75,0.85,0.85,"NDC");
+      TPaveText tt(0.50,0.70,0.88,0.88,"NDC");
       tt.SetFillColor(kWhite);
       tt.SetTextColor(kBlack);
       tt.SetTextAlign(12);
       tt.AddText("Temperature corrected PE values");
-      tt.AddText(Form("refT %.1f deg C, PETempSlope %.4f K^-1",event.GetReferenceTemperature(),event.GetPETemperatureSlope()));
-      tt.AddText(Form("calibTempSlope %.1f ADC*ns/K",event.GetCalibTemperatureSlope()));
+      tt.AddText(Form("reference temp %.1f deg C (CMB), %.1f deg C (FEB)",tc.referenceTemperatureCMB, tc.referenceTemperatureFEB));
+      tt.AddText(Form("overvoltage %.4f V/K (CMB), %.4f V/K (FEB)",tc.overvoltageTemperatureChangeCMB, tc.overvoltageTemperatureChangeFEB));
+      tt.AddText(Form("calib %.1f ADC*ns/V, PEs %.4f 1/V", tc.calibOvervoltageChange, tc.PEOvervoltageChange));
+      tt.AddText(Form("calib %.1f ADC*ns/V, calibAFE %.2f ADC*ns/K (FEB), PEs %.4f 1/V", tc.calibOvervoltageChange, tc.calibTemperatureChangeAFE, tc.PEOvervoltageChange));
       tt.Draw("same");
 
       TGraph *g=event.GetHistTemperatures(feb, channel);
       if(g->GetN()>0)
       {
         event.GetCanvas(feb, channel)->cd(4);
+        gPad->cd(1);
         g->Draw("AP");
         meanTemperatures.push_back(g->GetMean(2));
         stddevTemperatures.push_back(g->GetRMS(2));
@@ -1295,16 +1357,22 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         stddevTemperatures.push_back(0);
       }
 
+      TGraph *g2=event.GetHistTemperaturesFEB(feb, channel);
+      if(g2->GetN()>0)
+      {
+        event.GetCanvas(feb, channel)->cd(4);
+        gPad->cd(2);
+        g2->Draw("AP");
+      }
+
       event.GetCanvas(feb,channel)->Update();
       event.GetCanvas(feb,channel)->Print(pdfFileName.c_str(), "pdf");
     }
   }
 
-  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, meanTemperatures, stddevTemperatures, treeSpills, nEvents, calib,
-                PETemperatureSlope, calibTemperatureSlope, referenceTemperature);
+  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, chi2s, meanTemperatures, stddevTemperatures, treeSpills, nEvents, calib, tc);
 
-  Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms,
-            PETemperatureSlope, calibTemperatureSlope, referenceTemperature);
+  Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, tc);
 
   c0.Print(Form("%s]", pdfFileName.c_str()), "pdf");
 
@@ -1376,15 +1444,24 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
 void printHelp()
 {
   std::cout<<"Use as"<<std::endl;
-  std::cout<<"recoCrv -h             Prints this help."<<std::endl;
+  std::cout<<"recoCrv -h                        Prints this help."<<std::endl;
   std::cout<<"recoCrv RUNNUMBER [-p] [options] Reconstructs a run."<<std::endl;
-  std::cout<<"-p                     Uses Poisson fit for the PE yield distribution, instead of a convoluted Gauss-Landau fit."<<std::endl;
-  std::cout<<"--PETempSlope ###      temperature slope for PE yield (percentage change of the PE yield per K)"<<std::endl;
-  std::cout<<"                       default: -0.013 K^-1"<<std::endl;
-  std::cout<<"--calibTempSlope ###   temperature slope for calibration constant"<<std::endl;
-  std::cout<<"                       default: -7.0 ADC*ns/K"<<std::endl;
-  std::cout<<"--referenceTemp ###    temperature to which the calibration constants and PE yields are adjusted to"<<std::endl;
-  std::cout<<"                       default: 20.0 degC"<<std::endl;
+  std::cout<<"-p                                Uses Poisson fit for the PE yield distribution, instead of a convoluted Gauss-Landau fit."<<std::endl;
+  std::cout<<"                                  (used for LED light sources)"<<std::endl;
+  std::cout<<"--PEOvervoltageChange ###         change of PE yield per overvoltage change (percentage change of the PE yield per V)"<<std::endl;
+  std::cout<<"                                  default: 0.229 1/V"<<std::endl;
+  std::cout<<"--calibOvervoltageChange ###      change of calibration constant per overvoltage change"<<std::endl;
+  std::cout<<"                                  default: 125.5 ADC*ns/V (use 412.9 ADC*ns/V for gain setting 0x000)"<<std::endl;
+  std::cout<<"--calibTempChangeAFE ###          additional change of calibration constant due to temperature change in AFE"<<std::endl;
+  std::cout<<"                                  default: -1.46 ADC*ns/K (use -4.80 ADC*ns/K for gain setting 0x000)"<<std::endl;
+  std::cout<<"--overvoltageTempChangeCMB ###    overvoltage change due to temperature change at the CMB"<<std::endl;
+  std::cout<<"                                  default: -0.0554 V/K"<<std::endl;
+  std::cout<<"--overvoltageTempChangeFEB ###    overvoltage change due to temperature change at the FEB"<<std::endl;
+  std::cout<<"                                  default: +0.00409 V/K"<<std::endl;
+  std::cout<<"--referenceTempCMB ###            CMB temperature to which the overvoltage is adjusted to"<<std::endl;
+  std::cout<<"                                  default: 20.0 degC"<<std::endl;
+  std::cout<<"--referenceTempFEB ###            FEB temperature to which the overvoltage is adjusted to"<<std::endl;
+  std::cout<<"                                  default: 40.0 degC"<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -1401,19 +1478,21 @@ int main(int argc, char **argv)
   gStyle->SetOptFit(0);
 
   std::string runNumber=argv[1];
-  bool   usePoisson            = false;
-  double PETemperatureSlope    = -0.013; //K^-1
-  double calibTemperatureSlope = -7.0;   //ADC*ns/K
-  double referenceTemperature  = 20.0;   //degC
+  bool usePoisson = false;
+  TemperatureCorrections tc;  //default values are set in the definition of this struct
   for(int i=2; i<argc; i++)  //loop through options that don't require a second argument
   {
     if(strcmp(argv[i],"-p")==0) usePoisson=true;
   }
   for(int i=2; i<argc-1; i++)  //loop through options that require a second argument
   {
-    if(strcmp(argv[i],"--PETempSlope")==0)    PETemperatureSlope=atof(argv[i+1]);
-    if(strcmp(argv[i],"--calibTempSlope")==0) calibTemperatureSlope=atof(argv[i+1]);
-    if(strcmp(argv[i],"--referenceTemp")==0)  referenceTemperature=atof(argv[i+1]);
+    if(strcmp(argv[i],"--PEOvervoltageChange")==0)       tc.PEOvervoltageChange=atof(argv[i+1]);
+    if(strcmp(argv[i],"--calibOvervoltageChange")==0)    tc.calibOvervoltageChange=atof(argv[i+1]);
+    if(strcmp(argv[i],"--calibTempChangeAFE")==0)        tc.calibTemperatureChangeAFE=atof(argv[i+1]);
+    if(strcmp(argv[i],"--overvoltageTempChangeCMB")==0)  tc.overvoltageTemperatureChangeCMB=atof(argv[i+1]);
+    if(strcmp(argv[i],"--overvoltageTempChangeFEB")==0)  tc.overvoltageTemperatureChangeFEB=atof(argv[i+1]);
+    if(strcmp(argv[i],"--referenceTempCMB")==0)          tc.referenceTemperatureCMB=atof(argv[i+1]);
+    if(strcmp(argv[i],"--referenceTempFEB")==0)          tc.referenceTemperatureFEB=atof(argv[i+1]);
   }
   std::string inFileName;
   std::string calibFileName;
@@ -1422,12 +1501,7 @@ int main(int argc, char **argv)
   std::string txtFileName;
   makeFileNames(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName);
 
-  process(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName,
-          usePoisson, PETemperatureSlope, calibTemperatureSlope, referenceTemperature);
+  process(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName, usePoisson, tc);
 
-//#pragma message "USING WRONG CALIB CONSTANTS"
-//std::cout<<"USING WRONG CALIB CONSTANTS"<<std::endl;
-//#pragma message "USING WRONG SIGNAL REGION"
-//std::cout<<"USING WRONG SIGNAL REGION"<<std::endl;
   return 0;
 }
