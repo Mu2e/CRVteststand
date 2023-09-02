@@ -15,6 +15,8 @@ const int CHANNEL_PER_FEB=64;
 const int CHANNEL_PER_FPGA=16;
 const double CRV_TDC_RATE = 159.324e6;  // Hz
 const int BOARD_STATUS_REGISTERS=22;
+const int FPGA_BLOCK_REGISTERS=38;
+const int FPGA_BLOCKS=4;
 
 struct Event
 {
@@ -65,6 +67,7 @@ class EventTree
   int    _spillNumber; //from FEB spill header
   int    _eventNumber;
   int   *_boardStatus;  //need one board status for each FEB
+  int   *_FPGABlocks;   //need 4 FPGA blocks for each FEB regardless of how many FPGAs have data
 
   //older files: time stamp stored only for the first spill of the first subrun
   struct tm  _timestampStruct;
@@ -83,7 +86,7 @@ class EventTree
   bool ReadEventHeaderStart();
   bool ReadEventHeader(int &eventNumber, long &tdcSinceSpill, size_t &dataSize, bool missingBytes);
   bool ReadEvent(Event &theEvent, long tdcSinceSpill, int feb, size_t dataSize, bool checkMissingBytes, bool &missingBytes);
-  bool ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatureTmp[CHANNEL_PER_FEB], int boardStatus[BOARD_STATUS_REGISTERS]);
+  bool ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatureTmp[CHANNEL_PER_FEB], int boardStatus[BOARD_STATUS_REGISTERS], int FPGABlocks[FPGA_BLOCKS*FPGA_BLOCK_REGISTERS]);
 };
 
 EventTree::EventTree(const std::string &runNumber, const std::string &inFileName, const std::string &outFileName,
@@ -125,6 +128,7 @@ EventTree::EventTree(const std::string &runNumber, const std::string &inFileName
 
 
   _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
+  _FPGABlocks     = new int[_numberOfFebs*FPGA_BLOCKS*FPGA_BLOCK_REGISTERS];
   _tdcSinceSpill  = new long[_numberOfFebs*_channelsPerFeb];
   _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
   _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
@@ -152,6 +156,10 @@ void EventTree::Clear()
   {
     _boardStatus[i]=-1;
   }
+  for(int i=0; i<_numberOfFebs*FPGA_BLOCKS*FPGA_BLOCK_REGISTERS; i++)
+  {
+    _FPGABlocks[i]=-1;
+  }
   for(int i=0; i<_numberOfFebs*_channelsPerFeb; i++)
   {
     _tdcSinceSpill[i]=0;
@@ -165,6 +173,7 @@ void EventTree::Clear()
 EventTree::~EventTree()
 {
   delete [] _boardStatus;
+  delete [] _FPGABlocks;
   delete [] _tdcSinceSpill;
   delete [] _timeSinceSpill;
   delete [] _adc;
@@ -185,6 +194,7 @@ void EventTree::PrepareTree()
   _tree->Branch("runtree_biasVoltage", _biasVoltage, Form("runtree_biasVoltage[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_temperature", _temperature, Form("runtree_temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _tree->Branch("runtree_boardStatus", _boardStatus, Form("runtree_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
+  _tree->Branch("runtree_FPGABlocks", _FPGABlocks, Form("runtree_FPGABlocks[%i][%i][%i]/I",_numberOfFebs,FPGA_BLOCKS,FPGA_BLOCK_REGISTERS));
   _tree->Branch("runtree_spillTimestamp", &_timestamp,"runtree_spillTimestamp/L");
 
   _treeSpills->Branch("runNumber", &_run, "runNumber/I");
@@ -200,6 +210,7 @@ void EventTree::PrepareTree()
   _treeSpills->Branch("spill_biasVoltage", _biasVoltage, Form("spill_biasVoltage[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _treeSpills->Branch("spill_temperature", _temperature, Form("spill_temperature[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   _treeSpills->Branch("spill_boardStatus", _boardStatus, Form("spill_boardStatus[%i][%i]/I",_numberOfFebs,BOARD_STATUS_REGISTERS));
+  _treeSpills->Branch("spill_FPGABlocks", _FPGABlocks, Form("spill_FPGABlocks[%i][%i][%i]/I",_numberOfFebs,FPGA_BLOCKS,FPGA_BLOCK_REGISTERS));
   _treeSpills->Branch("spill_timestamp", &_timestamp,"spill_timestamp/L");
   _treeSpills->Branch("spill_timestamp_sec", &_timestampStruct.tm_sec);
   _treeSpills->Branch("spill_timestamp_min", &_timestampStruct.tm_min);
@@ -363,7 +374,7 @@ std::cout<<"missingBytes FEB/ch "<<feb<<"  "<<channel<<std::endl;
   return true;
 }
 
-bool EventTree::ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatureTmp[CHANNEL_PER_FEB], int boardStatus[BOARD_STATUS_REGISTERS])
+bool EventTree::ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatureTmp[CHANNEL_PER_FEB], int boardStatus[BOARD_STATUS_REGISTERS], int FPGABlocks[FPGA_BLOCKS*FPGA_BLOCK_REGISTERS])
 {
   std::string line;
   std::vector<unsigned> buffer(16);
@@ -387,8 +398,8 @@ bool EventTree::ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatur
 
   //2nd board block line
   if(!ParseData(buffer, 6, true, true)) {_binary=binaryTmp; return false;}
-  _binary=binaryTmp;
   for(int i=0; i<6; ++i) boardStatus[i+16]=buffer[i];
+  _binary=binaryTmp;
 
   for(int iAFE=0; iAFE<8; ++iAFE)
   {
@@ -398,15 +409,19 @@ bool EventTree::ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatur
   if(!getline(_inFile, line)) return false;  //seems to be needed to get to the end of the line
 
   //FPGA blocks
-  int nFPGA = 4;   //the stab command always returns the data of all 4 FPGAs, even if some FPGAs are turned off
-  for(int iFPGA=0; iFPGA<nFPGA; ++iFPGA)
+  //the stab command always returns the data of all 4 FPGAs, even if some FPGAs are turned off
+  for(int iFPGA=0; iFPGA<FPGA_BLOCKS; ++iFPGA)
   {
-    if(!getline(_inFile, line)) return false;  //not used
-
-    bool binaryTmp=_binary;
+    binaryTmp=_binary;
     _binary=false;
+
+    //1st line
     if(!ParseData(buffer, 16, true, true)) {_binary=binaryTmp; return false;}
-    _binary=binaryTmp;
+    for(int i=0; i<16; ++i) FPGABlocks[iFPGA*FPGA_BLOCK_REGISTERS+i]=buffer[i];
+
+    //2nd line
+    if(!ParseData(buffer, 16, true, true)) {_binary=binaryTmp; return false;}
+    for(int i=0; i<16; ++i) FPGABlocks[iFPGA*FPGA_BLOCK_REGISTERS+i+16]=buffer[i];
     for(int iCMB=0; iCMB<4; ++iCMB)
     {
       for(int i=0; i<4; ++i)
@@ -416,8 +431,13 @@ bool EventTree::ReadStab(float biasVoltageTmp[CHANNEL_PER_FEB], float temperatur
       }
     }
 
-    if(!getline(_inFile, line)) return false;  //for EOL at 2nd line
-    if(!getline(_inFile, line)) return false;  //not used
+    //3rd line
+    if(!ParseData(buffer, 6, true, true)) {_binary=binaryTmp; return false;}
+    for(int i=0; i<6; ++i) FPGABlocks[iFPGA*FPGA_BLOCK_REGISTERS+i+32]=buffer[i];
+
+    _binary=binaryTmp;
+
+    if(!getline(_inFile, line)) return false;  //for EOL at 3rd line
   }
 
   return true;
@@ -483,10 +503,11 @@ void EventTree::ReadSpill()
     float biasVoltageTmp[CHANNEL_PER_FEB];
     float temperatureTmp[CHANNEL_PER_FEB];
     int   boardStatusTmp[BOARD_STATUS_REGISTERS];
+    int   FPGABlocksTmp[FPGA_BLOCKS*FPGA_BLOCK_REGISTERS];
     bool  foundStab=false;
     if(line.find("stab")<2)
     {
-      if(!ReadStab(biasVoltageTmp,temperatureTmp,boardStatusTmp))
+      if(!ReadStab(biasVoltageTmp,temperatureTmp,boardStatusTmp,FPGABlocksTmp))
       {
         std::cout<<"incomplete stabs. skipping this FEB."<<std::endl;
         _missingFebs=true;
@@ -528,6 +549,10 @@ void EventTree::ReadSpill()
       for(int iRegister=0; iRegister<BOARD_STATUS_REGISTERS; ++iRegister)
       {
         _boardStatus[feb*BOARD_STATUS_REGISTERS+iRegister]=boardStatusTmp[iRegister];
+      }
+      for(int iRegister=0; iRegister<FPGA_BLOCKS*FPGA_BLOCK_REGISTERS; ++iRegister)
+      {
+        _FPGABlocks[feb*FPGA_BLOCKS*FPGA_BLOCK_REGISTERS+iRegister]=FPGABlocksTmp[iRegister];
       }
     }
 
