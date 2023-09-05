@@ -462,6 +462,8 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
+      double avgTemperature=-1000;
+      double avgTemperatureFEB=-1000;
 
       if(_temperatureHist[index]->GetN()>0)
       {
@@ -469,6 +471,7 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
         gPad->cd(1);
         gPad->cd(1);
         _temperatureHist[index]->Draw("AP");
+        avgTemperature=_temperatureHist[index]->GetMean(2);
       }
 
       if(_temperatureFEBHist[index]->GetN()>0)
@@ -477,6 +480,16 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
         gPad->cd(1);
         gPad->cd(2);
         _temperatureFEBHist[index]->Draw("AP");
+        avgTemperatureFEB=_temperatureFEBHist[index]->GetMean(2);
+      }
+
+      double minCalibMaxBinAtTref = _minCalibMaxBin;
+      if(avgTemperature>-300 && avgTemperatureFEB>-300) //temperature of -1000 means no temperature found
+      {
+        float deltaOvervoltage = _tc.overvoltageTemperatureChangeCMB*(avgTemperature-_tc.referenceTemperatureCMB)
+                               + _tc.overvoltageTemperatureChangeFEB*(avgTemperatureFEB-_tc.referenceTemperatureFEB);
+        minCalibMaxBinAtTref = _minCalibMaxBin - _tc.calibOvervoltageChange*deltaOvervoltage
+                                               - _tc.calibTemperatureChangeAFE*(avgTemperatureFEB-_tc.referenceTemperatureFEB);
       }
 
       _deadChannels[index]=false;
@@ -522,7 +535,7 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
         double maxbinContent = 0;
         for(int bin=1; bin<CS._calibrationHist->GetNbinsX(); bin++)
         {
-          if(CS._calibrationHist->GetBinCenter(bin)<_minCalibMaxBin) continue;   //find 1PE maximum only between 250 and 1500
+          if(CS._calibrationHist->GetBinCenter(bin)<(k==0?_minCalibMaxBin:minCalibMaxBinAtTref)) continue;   //find 1PE maximum only between 250 and 1500
           if(CS._calibrationHist->GetBinCenter(bin)>1500) break;     //1500
           double binContent = CS._calibrationHist->GetBinContent(bin);
           if(binContent>maxbinContent)
