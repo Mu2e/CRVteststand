@@ -1319,7 +1319,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         h[i]->Draw();
         h[i]->Write();  //write to root file
 
-        t[i]=new TPaveText(0.65,0.58,0.88,0.70,"NDC");
+        t[i]=new TPaveText(0.65,0.58,0.88,0.72,"NDC");
         t[i]->SetFillColor(kWhite);
         t[i]->SetTextColor(kRed);
         t[i]->SetTextAlign(12);
@@ -1331,14 +1331,13 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
       } 
 
       event.GetCanvas(feb, channel)->cd(2);
-      TPaveText tt(0.50,0.70,0.88,0.88,"NDC");
+      TPaveText tt(0.48,0.72,0.88,0.88,"NDC");
       tt.SetFillColor(kWhite);
       tt.SetTextColor(kBlack);
       tt.SetTextAlign(12);
       tt.AddText("Temperature corrected PE values");
       tt.AddText(Form("reference temp %.1f deg C (CMB), %.1f deg C (FEB)",tc.referenceTemperatureCMB, tc.referenceTemperatureFEB));
       tt.AddText(Form("overvoltage %.4f V/K (CMB), %.4f V/K (FEB)",tc.overvoltageTemperatureChangeCMB, tc.overvoltageTemperatureChangeFEB));
-      tt.AddText(Form("calib %.1f ADC*ns/V, PEs %.4f 1/V", tc.calibOvervoltageChange, tc.PEOvervoltageChange));
       tt.AddText(Form("calib %.1f ADC*ns/V, calibAFE %.2f ADC*ns/K (FEB), PEs %.4f 1/V", tc.calibOvervoltageChange, tc.calibTemperatureChangeAFE, tc.PEOvervoltageChange));
       tt.Draw("same");
 
