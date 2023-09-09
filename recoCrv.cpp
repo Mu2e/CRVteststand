@@ -28,6 +28,7 @@
 # include "TTree.h"
 # include "TNtuple.h"
 # include "TFile.h"
+# include "TKey.h"
 # include "TLine.h"
 # include "TPaveText.h"
 # include "TFitResult.h"
@@ -689,24 +690,22 @@ double LandauGaussFunction(double *x, double *par)
 }
 void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
 {
-    float maxX=0;
-    float maxValue=0;
-    for(int i=15; i<=h.GetNbinsX(); i++)
+    std::multimap<float,float> bins;  //binContent,binCenter
+    for(int i=8; i<=h.GetNbinsX(); i++) bins.emplace(h.GetBinContent(i),h.GetBinCenter(i));  //ordered from smallest to largest bin entries
+    if(bins.size()<4) return;
+    if(bins.rbegin()->first<20) return;  //low statistics
+    int nBins=0;
+    float binSum=0;
+    for(auto bin=bins.rbegin(); bin!=bins.rend(); ++bin)
     {
-      if(h.GetBinContent(i)>maxValue) {maxValue=h.GetBinContent(i); maxX=h.GetBinCenter(i);}
+      nBins++;
+      binSum+=bin->second;
+      if(nBins==4) break;
     }
-//    if(maxValue<50) return;
-    if(maxValue<20) return;
-
-    //Fit range
-    Double_t fitRangeStart=25.0;
-    Double_t fitRangeEnd  =110.0; //100 @ 13  //110 @ 14
-//    Double_t fitRangeEnd  =h.GetXaxis()->GetXmax();
-/*
-    Double_t fitRangeStart=0.6*maxX;
-    Double_t fitRangeEnd  =2.0*maxX;
-    if(fitRangeStart<12.0) fitRangeStart=12.0;
-*/
+    float maxX=binSum/4;
+    float fitRangeStart=0.7*maxX;  //0.6 @ 24
+    float fitRangeEnd  =2.0*maxX;
+    if(fitRangeStart<15.0) fitRangeStart=15.0;
 
     //Parameters 
     Double_t startValues[4], parLimitsLow[4], parLimitsHigh[4];
@@ -719,28 +718,26 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
     parLimitsLow[2]=0.01*startValues[2];
     parLimitsHigh[2]=100*startValues[2];
     //Other parameters
-    startValues[0]=4.5;   startValues[3]=11.0;
-    parLimitsLow[0]=2.0;  parLimitsLow[3]=5.0;  //3 and 8
-    parLimitsHigh[0]=10.0; parLimitsHigh[3]=20.0;   //7 and 15 @ 13  //6 and 14 @ 14
+    startValues[0]=5.0;   startValues[3]=10.0;
+    parLimitsLow[0]=2.0;  parLimitsLow[3]=2.0;
+    parLimitsHigh[0]=15.0; parLimitsHigh[3]=20.0; //7 and 15 @ 21  //6 and 13 @ 23
 
     TF1 fit("LandauGauss",LandauGaussFunction,fitRangeStart,fitRangeEnd,4);
     fit.SetParameters(startValues);
     fit.SetLineColor(kRed);
     fit.SetParNames("Width","MP","Area","GSigma");
     for(int i=0; i<4; i++) fit.SetParLimits(i, parLimitsLow[i], parLimitsHigh[i]);
-    TFitResultPtr fr = h.Fit(&fit,"QRS");
+    TFitResultPtr fr = h.Fit(&fit,"LQRS");
     fit.Draw("same");
 
     mpv = fit.GetMaximumX();
-    chi2 = fr->Chi2();
+    chi2 = (fr->Ndf()>0?fr->Chi2()/fr->Ndf():NAN);
     if(mpv==fitRangeStart) {mpv=0; return;}
     float halfMaximum = fit.Eval(mpv)/2.0;
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = h.Integral(10,150);
-
-std::cout<<h.GetName()<<"    "; for(int i=0; i<4; ++i) std::cout<<fit.GetParameter(i)<<"  "; std::cout<<"             "<<chi2<<std::endl;
+    signals = fit.Integral(0,150);
 }
 double PoissonFunction(double *x, double *par)
 {
@@ -758,20 +755,16 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
 {
     float maxX=0;
     float maxValue=0;
-    for(int i=15; i<=h.GetNbinsX(); i++)
+    for(int i=8; i<=h.GetNbinsX(); i++)
     {
       if(h.GetBinContent(i)>maxValue) {maxValue=h.GetBinContent(i); maxX=h.GetBinCenter(i);}
     }
     if(maxValue<20) return;
 
     //Fit range
-    Double_t fitRangeStart=10.0;
-    Double_t fitRangeEnd  =h.GetXaxis()->GetXmax();
-/*
     Double_t fitRangeStart=0.7*maxX;
-    Double_t fitRangeEnd  =1.5*maxX;
-    if(fitRangeStart<12.0) fitRangeStart=12.0;
-*/
+    Double_t fitRangeEnd  =1.3*maxX;
+    if(fitRangeStart<15.0) fitRangeStart=15.0;
 
     TF1 fit("Poisson",PoissonFunction,fitRangeStart,fitRangeEnd,3);
     fit.SetParameter(0,maxValue/TMath::Poisson(maxX,maxX));  //"height" of the function
@@ -783,13 +776,13 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
     fit.Draw("same");
 
     mpv = fit.GetMaximumX();
-    chi2 = fr->Chi2();
+    chi2 = (fr->Ndf()>0?fr->Chi2()/fr->Ndf():NAN);
     if(mpv==fitRangeStart) {mpv=0; return;}
     float halfMaximum = fit.Eval(mpv)/2.0;
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = h.Integral(10,150);
+    signals = fit.Integral(0,150);
 }
 
 void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
@@ -1246,8 +1239,8 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
   std::cout<<"Mean far side    "<<std::setw(8)<<meanFar[0]<<"  "<<std::setw(8)<<meanFar[1]<<std::endl;
 }
 
-void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &pdfFileName, const std::string &txtFileName,
-             bool usePoisson, const TemperatureCorrections &tc)
+void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &recoFileName2,
+             const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson, const TemperatureCorrections &tc)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -1262,6 +1255,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   TFile recoFile(recoFileName.c_str(), "RECREATE");
   if(!recoFile.IsOpen()) {std::cerr<<"Could not create reco file for run "<<runNumber<<std::endl; exit(1);}
 
+  recoFile.mkdir("plots");
   TTree *recoTree = new TTree("run","run");
   TTree *recoTreeSpill = treeSpills->CloneTree();
 	
@@ -1301,9 +1295,8 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
       for(int i=0; i<2; ++i)
       {
         event.GetCanvas(feb, channel)->cd(i+1);
-        gPad->SetLogy(1);
+//        gPad->SetLogy(1);
         h[i]=event.GetHistPEs(i,feb,channel);
-//        h[i]->Draw();
 
         float mpv=0;
         float fwhm=0;
@@ -1315,9 +1308,12 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         fwhms[i].push_back(fwhm);
         signals[i].push_back(nsignals);
         chi2s[i].push_back(chi2);
-//        h[i]->GetXaxis()->SetRange(15,150);
+        if(!usePoisson) h[i]->GetXaxis()->SetRangeUser(10,150);
         h[i]->Draw();
+        TDirectory *tempDirectory = gDirectory;
+        gDirectory->cd("plots");
         h[i]->Write();  //write to root file
+        tempDirectory->cd();
 
         t[i]=new TPaveText(0.65,0.58,0.88,0.72,"NDC");
         t[i]->SetFillColor(kWhite);
@@ -1326,7 +1322,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         t[i]->AddText(Form("MPV: %.1f PEs",mpv));
         t[i]->AddText(Form("FWHM: %.1f PEs",fwhm));
         t[i]->AddText(Form("Signals: %.0f",nsignals));
-        t[i]->AddText(Form("Chi2: %.1f",chi2));
+        t[i]->AddText(Form("Chi2/Ndf: %.3f",chi2));
         t[i]->Draw("same");
       } 
 
@@ -1378,11 +1374,35 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   recoTree->Write("", TObject::kOverwrite);
   recoTreeSpill->Write("", TObject::kOverwrite);
 
+  //store a copy of the reco file without the adc
+  recoTree->SetBranchStatus("adc",0);
+  gDirectory->cd("plots");
+  TDirectory *plotDirectory = gDirectory;
+
+  TFile recoFile2(recoFileName2.c_str(), "RECREATE");
+  TTree *recoTree2 = recoTree->CloneTree();
+  recoTree2->Write("", TObject::kOverwrite);
+  recoTreeSpill->Write("", TObject::kOverwrite);
+
+  TTree *recoTreeSummary = (TTree*)recoFile.Get("runSummary");
+  recoTreeSummary->Write("", TObject::kOverwrite);
+
+  TDirectory *plotDirectory2 = recoFile2.mkdir("plots");
+  plotDirectory2->cd();
+  size_t nHistograms = plotDirectory->GetListOfKeys()->GetSize();
+  for(size_t i=0; i<nHistograms; ++i)
+  {
+    TObject *hist = ((TKey*)plotDirectory->GetListOfKeys()->At(i))->ReadObj();
+    hist->Write();
+    delete hist;
+  }
+
   recoFile.Close();
+  recoFile2.Close();
   file.Close();
 }
 
-void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &calibFileName, std::string &recoFileName, std::string &pdfFileName, std::string &txtFileName)
+void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &calibFileName, std::string &recoFileName, std::string &recoFileName2, std::string &pdfFileName, std::string &txtFileName)
 {
   std::ifstream dirFile;
   dirFile.open("config.txt");
@@ -1411,6 +1431,8 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
     inFileName = dirEntry.path().string();
     calibFileName = calibDirName+"crv.calib."+dirEntry.path().stem().string().substr(s0.length())+".txt";
     recoFileName = recoDirName+"crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".root";
+    recoFileName2 = recoFileName;
+    recoFileName2.insert(recoFileName.length()-s1.length(),"_noadc");
     pdfFileName = recoDirName+"log.crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
     txtFileName = recoDirName+"log.crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".txt";
     break;
@@ -1431,6 +1453,8 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
       inFileName = dirEntry.path().string();
       calibFileName = calibDirName+"cal.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".txt";
       recoFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".root";
+      recoFileName2 = recoFileName;
+      recoFileName2.insert(recoFileName.length()-s1.length(),"_noadc");
       pdfFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
       txtFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".txt";
       break;
@@ -1496,11 +1520,12 @@ int main(int argc, char **argv)
   std::string inFileName;
   std::string calibFileName;
   std::string recoFileName;
+  std::string recoFileName2;
   std::string pdfFileName;
   std::string txtFileName;
-  makeFileNames(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName);
+  makeFileNames(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName);
 
-  process(runNumber, inFileName, calibFileName, recoFileName, pdfFileName, txtFileName, usePoisson, tc);
+  process(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, usePoisson, tc);
 
   return 0;
 }
