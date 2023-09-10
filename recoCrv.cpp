@@ -1431,8 +1431,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
     inFileName = dirEntry.path().string();
     calibFileName = calibDirName+"crv.calib."+dirEntry.path().stem().string().substr(s0.length())+".txt";
     recoFileName = recoDirName+"crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".root";
-    recoFileName2 = recoFileName;
-    recoFileName2.insert(recoFileName.length()-s1.length(),"_noadc");
+    recoFileName2 = recoDirName+"crv.reco2."+dirEntry.path().stem().string().substr(s0.length())+".root";
     pdfFileName = recoDirName+"log.crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
     txtFileName = recoDirName+"log.crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".txt";
     break;
@@ -1453,8 +1452,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
       inFileName = dirEntry.path().string();
       calibFileName = calibDirName+"cal.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".txt";
       recoFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".root";
-      recoFileName2 = recoFileName;
-      recoFileName2.insert(recoFileName.length()-s1.length(),"_noadc");
+      recoFileName2 = recoDirName+"rec2.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".root";
       pdfFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
       txtFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".txt";
       break;
