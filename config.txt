@@ -1,7 +1,7 @@
 crvraw	/pnfs/mu2e/scratch/users/ehrlich/sidet/crvraw/
 crvparsed	/pnfs/mu2e/scratch/users/ehrlich/sidet/crvparsed5/
 crvcalib	/pnfs/mu2e/scratch/users/ehrlich/sidet/crvcalib10_31/
-crvreco	/pnfs/mu2e/scratch/users/ehrlich/sidet/crvreco10_33/
+crvreco	/pnfs/mu2e/scratch/users/ehrlich/sidet/crvreco10_34/
 
 signalRegionStart	60
 signalRegionEnd	127

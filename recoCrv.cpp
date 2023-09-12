@@ -1382,10 +1382,12 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   TFile recoFile2(recoFileName2.c_str(), "RECREATE");
   TTree *recoTree2 = recoTree->CloneTree();
   recoTree2->Write("", TObject::kOverwrite);
-  recoTreeSpill->Write("", TObject::kOverwrite);
+  TTree *recoTreeSpill2 = recoTreeSpill->CloneTree();
+  recoTreeSpill2->Write("", TObject::kOverwrite);
 
   TTree *recoTreeSummary = (TTree*)recoFile.Get("runSummary");
-  recoTreeSummary->Write("", TObject::kOverwrite);
+  TTree *recoTreeSummary2 = recoTreeSummary->CloneTree();
+  recoTreeSummary2->Write("", TObject::kOverwrite);
 
   TDirectory *plotDirectory2 = recoFile2.mkdir("plots");
   plotDirectory2->cd();
