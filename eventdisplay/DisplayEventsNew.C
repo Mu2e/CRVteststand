@@ -281,6 +281,9 @@ void EventWindow::DoGoToEvent()
   //find tree enty of newSpill/newEvent
   int spillNumber;
   int eventNumber;
+  _tree->SetBranchStatus("*",0);
+  _tree->SetBranchStatus("spillNumber",1);
+  _tree->SetBranchStatus("eventNumber",1);
   _tree->SetBranchAddress("spillNumber", &spillNumber);
   _tree->SetBranchAddress("eventNumber", &eventNumber);
   for(int i=0; i<_nEntries; ++i)
@@ -292,6 +295,7 @@ void EventWindow::DoGoToEvent()
       break;
     }
   }
+  _tree->SetBranchStatus("*",1);
 
   DoEvent();  //resets the spill/event number, if spill/event wasn't found
 }
