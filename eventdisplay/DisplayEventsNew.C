@@ -237,7 +237,9 @@ class EventWindow : public TGMainFrame
   std::string         _runNumber;
   TFile*              _file;
   TTree*              _tree;
-  int                 _nEvents;
+  int                 _nEntries;
+  int                 _currentEntry;
+  int                 _currentSpill;
   int                 _currentEvent;
   int                 _numberOfFebs;
   int                 _channelsPerFeb;
@@ -258,8 +260,10 @@ class EventWindow : public TGMainFrame
   TText*                    _textPEs[2];
   TText*                    _textTotalPEs[2];
 
-  TGNumberEntryField* _gotoEntry;
+  TGNumberEntryField* _gotoSpill;
+  TGNumberEntryField* _gotoEvent;
   TGLabel*            _textRunNumber;
+  TGLabel*            _textSpillNumber;
   TGLabel*            _textEventNumber;
   TGCheckButton*      _fitButton;
 
@@ -271,18 +275,37 @@ class EventWindow : public TGMainFrame
 
 void EventWindow::DoGoToEvent()
 {
-  int newEvent = _gotoEntry->GetNumber();
-  if(newEvent<0 || newEvent>=_nEvents) return;
-  _currentEvent=newEvent;
-  DoEvent();
+  int newSpill = _gotoSpill->GetNumber();
+  int newEvent = _gotoEvent->GetNumber();
+
+  //find tree enty of newSpill/newEvent
+  int spillNumber;
+  int eventNumber;
+  _tree->SetBranchStatus("*",0);
+  _tree->SetBranchStatus("spillNumber",1);
+  _tree->SetBranchStatus("eventNumber",1);
+  _tree->SetBranchAddress("spillNumber", &spillNumber);
+  _tree->SetBranchAddress("eventNumber", &eventNumber);
+  for(int i=0; i<_nEntries; ++i)
+  {
+    _tree->GetEvent(i);
+    if(newSpill==spillNumber && newEvent==eventNumber)
+    {
+      _currentEntry=i;
+      break;
+    }
+  }
+  _tree->SetBranchStatus("*",1);
+
+  DoEvent();  //resets the spill/event number, if spill/event wasn't found
 }
 
 void EventWindow::DoPrevEvent()
 {
   while(1) //while loop and bool return value of DoEvent may become useful, if an event filter gets implemented
   {
-    _currentEvent--;
-    if(_currentEvent<0) _currentEvent=_nEvents-1;
+    _currentEntry--;
+    if(_currentEntry<0) _currentEntry=_nEntries-1;
     if(DoEvent()) break;
   }
 }
@@ -291,15 +314,15 @@ void EventWindow::DoNextEvent()
 {
   while(1) //while loop and bool return value of DoEvent may become useful, if an event filter gets implemented
   {
-    _currentEvent++;
-    if(_currentEvent>=_nEvents) _currentEvent=0;
+    _currentEntry++;
+    if(_currentEntry>=_nEntries) _currentEntry=0;
     if(DoEvent()) break;
   }
 }
 
 void EventWindow::DoSave()
 {
-  SaveAs(Form("Run%s_Event%i.png",_runNumber.c_str(),_currentEvent));
+  SaveAs(Form("Run%s_Spill%i_Event%i.png",_runNumber.c_str(),_currentSpill,_currentEvent));
 }
 
 void EventWindow::ReadChannelMap()
@@ -340,11 +363,8 @@ void EventWindow::ReadChannelMap()
 
 bool EventWindow::DoEvent()
 {
-  _textEventNumber->ChangeText(Form("Event %05i",_currentEvent));
-  _gotoEntry->SetNumber(_currentEvent);
-  _textPEs[0]->SetTitle("");
-  _textPEs[1]->SetTitle("");
-
+  int     spillNumber;
+  int     eventNumber;
   float   PEs[_numberOfFebs][_channelsPerFeb];
   int     fitStatus[_numberOfFebs][_channelsPerFeb];
 //  int     adc[_numberOfFebs][_channelsPerFeb][_numberOfSamples];
@@ -356,6 +376,9 @@ bool EventWindow::DoEvent()
   int     recoEndBin[_numberOfFebs][_channelsPerFeb];
   float   pedestal[_numberOfFebs][_channelsPerFeb];
 
+  _tree->SetBranchAddress("spillNumber", &spillNumber);
+  _tree->SetBranchAddress("eventNumber", &eventNumber);
+  _tree->SetBranchAddress("PEs", PEs);
   _tree->SetBranchAddress("PEs", PEs);
   _tree->SetBranchAddress("fitStatus", fitStatus);
   _tree->SetBranchAddress("adc", adc);
@@ -365,7 +388,14 @@ bool EventWindow::DoEvent()
   _tree->SetBranchAddress("recoStartBin", recoStartBin);
   _tree->SetBranchAddress("recoEndBin", recoEndBin);
   _tree->SetBranchAddress("pedestal", pedestal);
-  _tree->GetEvent(_currentEvent);
+  _tree->GetEvent(_currentEntry);
+
+  _textSpillNumber->ChangeText(Form("Spill %05i",spillNumber));
+  _textEventNumber->ChangeText(Form("Event %05i",eventNumber));
+  _gotoSpill->SetNumber(spillNumber);
+  _gotoEvent->SetNumber(eventNumber);
+  _textPEs[0]->SetTitle("");
+  _textPEs[1]->SetTitle("");
 
   float totalPEs[2]={0,0};
   float sumX   =0;
@@ -568,9 +598,9 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    
    _file = new TFile(_runFileName.c_str());
    _tree = (TTree*)_file->Get("run");
-   if(_tree==NULL) {std::cerr<<"Could not fint event tree."<<std::endl; return;}
-   _nEvents = _tree->GetEntries();
-   if(_nEvents<1)  {std::cerr<<"No events found!"<<std::endl; return; }
+   if(_tree==NULL) {std::cerr<<"Could not find event tree."<<std::endl; return;}
+   _nEntries = _tree->GetEntries();
+   if(_nEntries<1)  {std::cerr<<"No events found!"<<std::endl; return; }
 
    //to read the numberOfFebs, channelsPerFeb, and numberOfSamples
    TTree *treeSpills = (TTree*)_file->Get("spills");
@@ -590,12 +620,15 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    TGHorizontalFrame *buttonFrame = new TGHorizontalFrame(this, 1600, 200);
    AddFrame(buttonFrame);
 
-   const TGFont *font1= gClient->GetFont("-adobe-helvetica-medium-r-*-*-25-*-*-*-*-*-iso8859-1");
+   //const TGFont *font1= gClient->GetFont("-adobe-helvetica-medium-r-*-*-25-*-*-*-*-*-iso8859-1");
+   const TGFont *font1= gClient->GetFont("-adobe-helvetica-medium-r-*-*-20-*-*-*-*-*-iso8859-1");
    FontStruct_t ft1 = font1->GetFontStruct();
 
 
-   TGLabel      *gotoText   = new TGLabel(buttonFrame, "Go to event");
-   _gotoEntry  = new TGNumberEntryField(buttonFrame,-1,0,TGNumberFormat::kNESInteger);
+   TGLabel      *gotoTextSpill = new TGLabel(buttonFrame, "Go to spill");
+   _gotoSpill = new TGNumberEntryField(buttonFrame,-1,0,TGNumberFormat::kNESInteger);
+   TGLabel      *gotoTextEvent = new TGLabel(buttonFrame, "event");
+   _gotoEvent = new TGNumberEntryField(buttonFrame,-1,0,TGNumberFormat::kNESInteger);
    TGTextButton *gotoButton = new TGTextButton(buttonFrame, "&Go");
    TGTextButton *prevButton = new TGTextButton(buttonFrame, "&Prev Event");
    TGTextButton *nextButton = new TGTextButton(buttonFrame, "&Next Event");
@@ -603,8 +636,10 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    TGTextButton *saveButton = new TGTextButton(buttonFrame, "&Save");
    TGTextButton *exitButton = new TGTextButton(buttonFrame, "&Exit");
 
-   gotoText->SetTextFont(ft1);
-   _gotoEntry->SetFont(ft1);
+   gotoTextSpill->SetTextFont(ft1);
+   gotoTextEvent->SetTextFont(ft1);
+   _gotoSpill->SetFont(ft1);
+   _gotoEvent->SetFont(ft1);
    gotoButton->SetFont(ft1);
    prevButton->SetFont(ft1);
    nextButton->SetFont(ft1);
@@ -612,12 +647,13 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    saveButton->SetFont(ft1);
    exitButton->SetFont(ft1);
 
-   gotoText->SetMargins(10,10,10,10);
-   gotoButton->SetMargins(10,10,10,10);
-   prevButton->SetMargins(10,10,10,10);
-   nextButton->SetMargins(10,10,10,10);
-   saveButton->SetMargins(10,10,10,10);
-   exitButton->SetMargins(10,10,10,10);
+   gotoTextSpill->SetMargins(5,5,5,5);
+   gotoTextEvent->SetMargins(5,5,5,5);
+   gotoButton->SetMargins(5,5,5,5);
+   prevButton->SetMargins(5,5,5,5);
+   nextButton->SetMargins(5,5,5,5);
+   saveButton->SetMargins(5,5,5,5);
+   exitButton->SetMargins(5,5,5,5);
 
    gotoButton->Connect("Clicked()", "EventWindow", this, "DoGoToEvent()");
    prevButton->Connect("Clicked()", "EventWindow", this, "DoPrevEvent()");
@@ -626,8 +662,10 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    saveButton->Connect("Clicked()", "EventWindow", this, "DoSave()");
    exitButton->Connect("Pressed()", "EventWindow", this, "DoExit()");
 
-   buttonFrame->AddFrame(gotoText, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
-   buttonFrame->AddFrame(_gotoEntry, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
+   buttonFrame->AddFrame(gotoTextSpill, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
+   buttonFrame->AddFrame(_gotoSpill, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
+   buttonFrame->AddFrame(gotoTextEvent, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
+   buttonFrame->AddFrame(_gotoEvent, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
    buttonFrame->AddFrame(gotoButton, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
    buttonFrame->AddFrame(prevButton, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
    buttonFrame->AddFrame(nextButton, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
@@ -635,15 +673,20 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    buttonFrame->AddFrame(saveButton, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
    buttonFrame->AddFrame(exitButton, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 5, 5, 5, 5));
 
-   const TGFont *font2 = gClient->GetFont("-adobe-courier-bold-r-normal--34-240-100-100-m-200-iso8859-1");
+//   const TGFont *font2 = gClient->GetFont("-adobe-courier-bold-r-normal--34-240-100-100-m-200-iso8859-1");
+   const TGFont *font2 = gClient->GetFont("-adobe-courier-bold-r-normal--28-240-100-100-m-200-iso8859-1");
    FontStruct_t ft2 = font2->GetFontStruct();
    _textRunNumber = new TGLabel(buttonFrame, Form("Run %s",_runNumber.c_str()));
    _textRunNumber->SetTextColor(gROOT->GetColor(6));
    _textRunNumber->SetTextFont(ft2);
-   _textEventNumber = new TGLabel(buttonFrame, "Event 00000");
+   _textSpillNumber = new TGLabel(buttonFrame, "Spill -----");
+   _textSpillNumber->SetTextColor(gROOT->GetColor(8));
+   _textSpillNumber->SetTextFont(ft2);
+   _textEventNumber = new TGLabel(buttonFrame, "Event -----");
    _textEventNumber->SetTextColor(gROOT->GetColor(8));
    _textEventNumber->SetTextFont(ft2);
    buttonFrame->AddFrame(_textRunNumber, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 10, 10, 5, 5));
+   buttonFrame->AddFrame(_textSpillNumber, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 10, 10, 5, 5));
    buttonFrame->AddFrame(_textEventNumber, new TGLayoutHints(kLHintsLeft|kLHintsCenterY, 10, 10, 5, 5));
 
    TGHorizontalFrame *contentFrame = new TGHorizontalFrame(this, 1600, 800);
@@ -660,6 +703,8 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    canvasFrontB->GetCanvas()->cd();
    DrawFront(1);
 
+   _currentEntry = 0;
+   _currentSpill = 0;
    _currentEvent = 0;
    DoEvent();
    _pads[0]->Modified();
