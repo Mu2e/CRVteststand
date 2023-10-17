@@ -52,6 +52,8 @@ struct TemperatureCorrections
   double referenceTemperatureFEB{40.0};   //degC
 };
 
+typedef std::map<std::pair<int,std::pair<int,int> >, std::pair<int,std::pair<float,float> > >  ChannelMapType;   //feb,(channel1,channel2) --> side,(x,y)
+
 class Calibration
 {
   public:
@@ -318,6 +320,8 @@ class CrvEvent
            }
   TGraph  *GetHistTemperatures(int feb, int channel) {return _histTemperatures[feb*_channelsPerFeb+channel];}
   TGraph  *GetHistTemperaturesFEB(int feb, int channel) {return _histTemperaturesFEB[feb*_channelsPerFeb+channel];}
+  void     ReadChannelMap(const std::string &channelMapFile);
+  void     TrackFit();
 
   private:
   CrvEvent();
@@ -376,6 +380,15 @@ class CrvEvent
   std::vector<TH1F*>    _histPEs, _histPEsTemperatureCorrected;
   std::vector<TGraph*>  _histTemperatures;
   std::vector<TGraph*>  _histTemperaturesFEB;
+
+
+  //for track fits
+  ChannelMapType _channelMap;
+  float _trackSlope;      //using slope=dx/dy to avoid inf for vertical tracks
+  float _trackIntercept;  //x value, where y=0
+  float _trackChi2;
+  int   _trackPoints;
+  float _trackPEs;
 };
 CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples,
                    TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections) : 
@@ -468,6 +481,11 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("LEtimeReflectedPulse", _LEtimeReflectedPulse, Form("LEtimeReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoStartBinReflectedPulse", _recoStartBinReflectedPulse, Form("recoStartBinReflectedPulse[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoEndBinReflectedPulse", _recoEndBinReflectedPulse, Form("recoEndBinReflectedPulse[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
+  recoTree->Branch("trackSlope", &_trackSlope, "trackSlope/F");
+  recoTree->Branch("trackIntercept", &_trackIntercept, "trackIntercept/F");
+  recoTree->Branch("trackChi2", &_trackChi2, "trackChi2/F");
+  recoTree->Branch("trackPoints", &_trackPoints, "trackPoints/I");
+  recoTree->Branch("trackPEs", &_trackPEs, "trackPEs/F");
 
   _canvas.resize(_numberOfFebs*_channelsPerFeb);
   _plot.resize(_numberOfFebs*_channelsPerFeb);
@@ -632,7 +650,123 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
     }
   }
 
+  //Fit track, if channel map is provided
+  if(!_channelMap.empty())
+  {
+    TrackFit();
+  }
+
   _recoTree->Fill();
+}
+
+void CrvEvent::TrackFit()
+{
+  float sumX     =0;
+  float sumY     =0;
+  float sumXY    =0;
+  float sumYY    =0;
+  _trackSlope    =0;
+  _trackIntercept=0;
+  _trackPEs      =0;
+  _trackPoints   =0;
+  _trackChi2     =-1;
+
+  //loop through the channel map
+  for(ChannelMapType::iterator channelIter=_channelMap.begin(); channelIter!=_channelMap.end(); ++channelIter)
+  {
+    int feb=channelIter->first.first;
+    int channel1=channelIter->first.second.first;
+    int channel2=channelIter->first.second.second;
+//    float side=channelIter->second.first;
+    float x=channelIter->second.second.first;
+    float y=channelIter->second.second.second;
+
+    if(feb<0 || feb>=_numberOfFebs) continue;  //feb not in event tree
+    if(channel1<0 || channel2<0 || channel1>=_channelsPerFeb || channel2>=_channelsPerFeb) continue;  //channels not in event tree
+
+    int index1=feb*_channelsPerFeb+channel1;  //used for _variable[i][j]
+    int index2=feb*_channelsPerFeb+channel2;  //used for _variable[i][j]
+
+    float PE1     = _PEsTemperatureCorrected[index1];
+    float PE2     = _PEsTemperatureCorrected[index2];
+    if(PE1<=0 || _fitStatus[index1]==0) PE1=0;
+    if(PE2<=0 || _fitStatus[index2]==0) PE2=0;
+
+    //collect information for the fit
+    //uses hit information from both sides
+    float PE  = PE1+PE2;
+    if(PE<5) continue;
+
+    sumX +=x*PE;
+    sumY +=y*PE;
+    sumXY+=x*y*PE;
+    sumYY+=y*y*PE;
+    _trackPEs+=PE;
+    ++_trackPoints;
+  }
+
+//do the fit
+  if(_trackPEs>=10 && _trackPoints>1)
+  {
+    if(_trackPEs*sumYY-sumY*sumY!=0)
+    {
+      _trackSlope=(_trackPEs*sumXY-sumX*sumY)/(_trackPEs*sumYY-sumY*sumY);
+      _trackIntercept=(sumX-_trackSlope*sumY)/_trackPEs;
+
+      //find chi2
+      _trackChi2=0;
+      for(ChannelMapType::iterator channelIter=_channelMap.begin(); channelIter!=_channelMap.end(); ++channelIter)
+      {
+        int feb=channelIter->first.first;
+        int channel1=channelIter->first.second.first;
+        int channel2=channelIter->first.second.second;
+//        float side=channelIter->second.first;
+        float x=channelIter->second.second.first;
+        float y=channelIter->second.second.second;
+
+        if(feb<0 || feb>=_numberOfFebs) continue;  //feb not in event tree
+        if(channel1<0 || channel2<0 || channel1>=_channelsPerFeb || channel2>=_channelsPerFeb) continue;  //channels not in event tree
+
+        int index1=feb*_channelsPerFeb+channel1;  //used for _variable[i][j]
+        int index2=feb*_channelsPerFeb+channel2;  //used for _variable[i][j]
+
+        float PE1     = _PEsTemperatureCorrected[index1];
+        float PE2     = _PEsTemperatureCorrected[index2];
+        if(PE1<=0 || _fitStatus[index1]==0) PE1=0;
+        if(PE2<=0 || _fitStatus[index2]==0) PE2=0;
+
+        float xFit = _trackSlope*y + _trackIntercept;
+        _trackChi2+=(xFit-x)*(xFit-x)*(PE1+PE2);  //PE-weighted chi2
+      }
+      _trackChi2/=_trackPEs;
+    }
+  }
+}
+
+void CrvEvent::ReadChannelMap(const std::string &channelMapFile)
+{
+  std::ifstream file(channelMapFile);
+  if(!file.is_open()) {std::cerr<<"Channel map file could not be opened."<<std::endl; exit(1);}
+
+  std::string header;
+  getline(file,header);
+
+  int febA, channelA1, channelA2;
+  int febB, channelB1, channelB2;
+  float x, y;
+
+  while(file >> febA >> channelA1 >> channelA2 >> febB >> channelB1 >> channelB2 >> x >> y)
+  {
+    std::pair<int,int> channelPairA(channelA1,channelA2);
+    std::pair<int,int> channelPairB(channelB1,channelB2);
+    std::pair<int,std::pair<int,int> > counterA(febA,channelPairA);
+    std::pair<int,std::pair<int,int> > counterB(febB,channelPairB);
+    std::pair<float,float> counterPos(x,y);
+    _channelMap[counterA]=std::pair<int, std::pair<float,float> >(0,counterPos);
+    _channelMap[counterB]=std::pair<int, std::pair<float,float> >(1,counterPos);
+  }
+
+  file.close();
 }
 
 double LandauGaussFunction(double *x, double *par) 
@@ -1240,7 +1374,7 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
 }
 
 void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &recoFileName2,
-             const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson, const TemperatureCorrections &tc)
+             const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson, const TemperatureCorrections &tc, const std::string &channelMapFile)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -1269,10 +1403,11 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
 
   Calibration calib(calibFileName, numberOfFebs, channelsPerFeb); 
   CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, tc);
+  if(channelMapFile!="") event.ReadChannelMap(channelMapFile);
 
   int nEvents = tree->GetEntries();
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
-//if(nEvents>10000) nEvents=10000;
+//if(nEvents>100) nEvents=100;
 
   gSystem->Unlink(pdfFileName.c_str());
   TCanvas c0;
@@ -1485,6 +1620,8 @@ void printHelp()
   std::cout<<"                                  default: 20.0 degC"<<std::endl;
   std::cout<<"--referenceTempFEB ###            FEB temperature to which the overvoltage is adjusted to"<<std::endl;
   std::cout<<"                                  default: 40.0 degC"<<std::endl;
+  std::cout<<"--channelMap ###                  file name of the channel map to be used to fit tracks"<<std::endl;
+  std::cout<<"                                  default: no file (=no track fits)"<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -1501,6 +1638,7 @@ int main(int argc, char **argv)
   gStyle->SetOptFit(0);
 
   std::string runNumber=argv[1];
+  std::string channelMapFile;
   bool usePoisson = false;
   TemperatureCorrections tc;  //default values are set in the definition of this struct
   for(int i=2; i<argc; i++)  //loop through options that don't require a second argument
@@ -1516,6 +1654,7 @@ int main(int argc, char **argv)
     if(strcmp(argv[i],"--overvoltageTempChangeFEB")==0)  tc.overvoltageTemperatureChangeFEB=atof(argv[i+1]);
     if(strcmp(argv[i],"--referenceTempCMB")==0)          tc.referenceTemperatureCMB=atof(argv[i+1]);
     if(strcmp(argv[i],"--referenceTempFEB")==0)          tc.referenceTemperatureFEB=atof(argv[i+1]);
+    if(strcmp(argv[i],"--channelMap")==0)                channelMapFile=argv[i+1];
   }
   std::string inFileName;
   std::string calibFileName;
@@ -1525,7 +1664,7 @@ int main(int argc, char **argv)
   std::string txtFileName;
   makeFileNames(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName);
 
-  process(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, usePoisson, tc);
+  process(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, usePoisson, tc, channelMapFile);
 
   return 0;
 }

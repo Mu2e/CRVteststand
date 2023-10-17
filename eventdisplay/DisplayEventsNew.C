@@ -427,14 +427,17 @@ bool EventWindow::DoEvent()
 
       //collect information for the fit
       //uses hit information from both sides
-      float x,y;
-      counter->GetPos(x,y);
-      sumX +=x*PE;
-      sumY +=y*PE;
-      sumXY+=x*y*PE;
-      sumYY+=y*y*PE;
-      ++nPoints;
-      sumPEs+=PE;
+      if(PE>=5)
+      {
+        float x,y;
+        counter->GetPos(x,y);
+        sumX +=x*PE;
+        sumY +=y*PE;
+        sumXY+=x*y*PE;
+        sumYY+=y*y*PE;
+        ++nPoints;
+        sumPEs+=PE;
+      }
 
       _pads[side]->cd();
       counter->SetFillColor(color);
@@ -469,17 +472,12 @@ bool EventWindow::DoEvent()
     _pads[side]->cd();
     if(_fit[side]!=NULL) {delete _fit[side]; _fit[side]=NULL;}
   }
-  if(_fitButton->IsOn() && sumPEs>0 && nPoints>0)
+  if(_fitButton->IsOn() && sumPEs>=10 && nPoints>1)
   {
-    float scale=nPoints/sumPEs;
-    sumX *=scale;
-    sumY *=scale;
-    sumXY*=scale;
-    sumYY*=scale;
-    if(nPoints*sumYY-sumY*sumY!=0)
+    if(sumPEs*sumYY-sumY*sumY!=0)
     {
-      float slope=(nPoints*sumXY-sumX*sumY)/(nPoints*sumYY-sumY*sumY);
-      float intercept=(sumX-slope*sumY)/nPoints;
+      float slope=(sumPEs*sumXY-sumX*sumY)/(sumPEs*sumYY-sumY*sumY);
+      float intercept=(sumX-slope*sumY)/sumPEs;
       float x1=intercept+slope*_minY;
       float x2=intercept+slope*_maxY;
       for(int side=0; side<2; ++side)
