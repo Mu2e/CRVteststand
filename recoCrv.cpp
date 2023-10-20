@@ -174,8 +174,8 @@ void CrvRecoEvent::PeakFitter(const short* data, int numberOfSamples, float pede
 {
   if(std::isnan(calibrationFactor) || calibrationFactor==0) return;
 
-  if(data[0]==0 && data[1]==0 && data[2]==0 && data[3]==0) return; //FIXME temporary check for bad events
-                                                                   //where other channels work, so that timSinceSpill wasn't marked as NAN
+//  if(data[0]==0 && data[1]==0 && data[2]==0 && data[3]==0) return; //FIXME temporary check for bad events
+//                                                                   //where other channels work, so that timSinceSpill wasn't marked as NAN
 
   //remove the pedestal and find the maxima in the signal region
   std::vector<float> waveform;
@@ -310,8 +310,8 @@ void CrvRecoEvent::PeakFitter(const short* data, int numberOfSamples, float pede
 class CrvEvent
 {
   public:
-  CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, 
-           TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections);
+  CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples,
+           TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections, float PEcut);
   void     Reconstruct(int entry, const Calibration &calib);
   TCanvas *GetCanvas(int feb, int channel) {return _canvas[feb*_channelsPerFeb+channel];}
   TH1F    *GetHistPEs(int i, int feb, int channel) 
@@ -384,6 +384,7 @@ class CrvEvent
 
   //for track fits
   ChannelMapType _channelMap;
+  float _PEcut;
   float _trackSlope;      //using slope=dx/dy to avoid inf for vertical tracks
   float _trackIntercept;  //x value, where y=0
   float _trackChi2;
@@ -391,9 +392,9 @@ class CrvEvent
   float _trackPEs;
 };
 CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples,
-                   TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections) : 
-                   _runNumber(runNumber), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), 
-                   _tree(tree), _recoTree(recoTree), _tc(temperatureCorrections)
+                   TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections, float PEcut) :
+                   _runNumber(runNumber), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples),
+                   _tree(tree), _recoTree(recoTree), _tc(temperatureCorrections), _PEcut(PEcut)
 {
   std::ifstream configFile;
   configFile.open("config.txt");
@@ -695,7 +696,7 @@ void CrvEvent::TrackFit()
     //collect information for the fit
     //uses hit information from both sides
     float PE  = PE1+PE2;
-    if(PE<5) continue;
+    if(PE<_PEcut) continue;
 
     sumX +=x*PE;
     sumY +=y*PE;
@@ -706,7 +707,7 @@ void CrvEvent::TrackFit()
   }
 
 //do the fit
-  if(_trackPEs>=10 && _trackPoints>1)
+  if(_trackPEs>=2*_PEcut && _trackPoints>1)
   {
     if(_trackPEs*sumYY-sumY*sumY!=0)
     {
@@ -735,8 +736,11 @@ void CrvEvent::TrackFit()
         if(PE1<=0 || _fitStatus[index1]==0) PE1=0;
         if(PE2<=0 || _fitStatus[index2]==0) PE2=0;
 
+        float PE  = PE1+PE2;
+        if(PE<_PEcut) continue;
+
         float xFit = _trackSlope*y + _trackIntercept;
-        _trackChi2+=(xFit-x)*(xFit-x)*(PE1+PE2);  //PE-weighted chi2
+        _trackChi2+=(xFit-x)*(xFit-x)*PE;  //PE-weighted chi2
       }
       _trackChi2/=_trackPEs;
     }
@@ -1374,7 +1378,7 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
 }
 
 void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &recoFileName2,
-             const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson, const TemperatureCorrections &tc, const std::string &channelMapFile)
+             const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson, const TemperatureCorrections &tc, const std::string &channelMapFile, float PEcut)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -1402,7 +1406,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->GetEntry(0);  //to read the numberOfFebs, channelsPerFeb, and numberOfSamples
 
   Calibration calib(calibFileName, numberOfFebs, channelsPerFeb); 
-  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, tc);
+  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, tc, PEcut);
   if(channelMapFile!="") event.ReadChannelMap(channelMapFile);
 
   int nEvents = tree->GetEntries();
@@ -1622,6 +1626,8 @@ void printHelp()
   std::cout<<"                                  default: 40.0 degC"<<std::endl;
   std::cout<<"--channelMap ###                  file name of the channel map to be used to fit tracks"<<std::endl;
   std::cout<<"                                  default: no file (=no track fits)"<<std::endl;
+  std::cout<<"--PEcut ###                       mininum number of PEs required to be used for the track fit"<<std::endl;
+  std::cout<<"                                  default: 5 PEs"<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -1641,6 +1647,7 @@ int main(int argc, char **argv)
   std::string channelMapFile;
   bool usePoisson = false;
   TemperatureCorrections tc;  //default values are set in the definition of this struct
+  float PEcut = 5;
   for(int i=2; i<argc; i++)  //loop through options that don't require a second argument
   {
     if(strcmp(argv[i],"-p")==0) usePoisson=true;
@@ -1655,6 +1662,7 @@ int main(int argc, char **argv)
     if(strcmp(argv[i],"--referenceTempCMB")==0)          tc.referenceTemperatureCMB=atof(argv[i+1]);
     if(strcmp(argv[i],"--referenceTempFEB")==0)          tc.referenceTemperatureFEB=atof(argv[i+1]);
     if(strcmp(argv[i],"--channelMap")==0)                channelMapFile=argv[i+1];
+    if(strcmp(argv[i],"--PEcut")==0)                     PEcut=atof(argv[i+1]);
   }
   std::string inFileName;
   std::string calibFileName;
@@ -1664,7 +1672,7 @@ int main(int argc, char **argv)
   std::string txtFileName;
   makeFileNames(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName);
 
-  process(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, usePoisson, tc, channelMapFile);
+  process(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, usePoisson, tc, channelMapFile, PEcut);
 
   return 0;
 }
