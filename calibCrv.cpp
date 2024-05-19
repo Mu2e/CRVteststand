@@ -663,12 +663,12 @@ void CrvEvent::StorePedestalAndCalibrationConstants(std::ofstream &calibFile)
   calibFile<<"reference temp: "<<_tc.referenceTemperatureCMB<<" deg C (CMB), "<<_tc.referenceTemperatureFEB<<" deg C (FEB)   ";
   calibFile<<"overvoltage: "<<_tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<_tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
   calibFile<<"calib: "<<_tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<_tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)"<<std::endl;
-  calibFile<<"  FEB  Channel  Pedestal  Calib     CalibT"<<std::endl;
+  calibFile<<"  FEB  Channel  Pedestal  Calib     CalibT   Noise  Xtalk"<<std::endl;
 
   std::cout<<"reference temp: "<<_tc.referenceTemperatureCMB<<" deg C (CMB), "<<_tc.referenceTemperatureFEB<<" deg C (FEB)   ";
   std::cout<<"overvoltage: "<<_tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<_tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
   std::cout<<"calib: "<<_tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<_tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)"<<std::endl;
-  std::cout<<"         FEB  Channel  Pedestal  Calib     CalibT"<<std::endl;
+  std::cout<<"         FEB  Channel  Pedestal  Calib     CalibT    Noise  Xtalk"<<std::endl;
 
   for(int i=0; i<_numberOfFebs; i++)
   {
@@ -679,12 +679,16 @@ void CrvEvent::StorePedestalAndCalibrationConstants(std::ofstream &calibFile)
       calibFile<<std::setw(4)<<i<<"  "<<std::setw(4)<<j<<"     ";
       calibFile<<std::setw(8)<<_pedestals[index]<<"  ";
       calibFile<<std::setw(8)<<_calibVector[0][index]._calibrationConstant<<"  ";
-      calibFile<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<std::endl;
+      calibFile<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<"  ";
+      calibFile<<std::setw(8)<<_calibVector[1][index]._noiseRate/1.0e6<<"  ";
+      calibFile<<std::setw(8)<<_calibVector[1][index]._xtalkProbability<<std::endl;
 
       std::cout<<"FEB/ch "<<std::setw(4)<<i<<"/"<<std::setw(4)<<j<<"     ";
       std::cout<<"pedestal "<<std::setw(8)<<_pedestals[index]<<"  ";
       std::cout<<"calibConst "<<std::setw(8)<<_calibVector[0][index]._calibrationConstant<<"  ";
-      std::cout<<"calibConstT "<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<std::endl;
+      std::cout<<"calibConstT "<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<"  ";
+      std::cout<<"noise "<<std::setw(8)<<_calibVector[1][index]._noiseRate/1.0e6<<"MHz"<<"  ";
+      std::cout<<"xtalk "<<std::setw(8)<<_calibVector[1][index]._xtalkProbability<<std::endl;
     }
   }
 }
