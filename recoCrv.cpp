@@ -62,6 +62,8 @@ class Calibration
   const std::vector<float> &GetPedestals() const {return _pedestal;}
   const std::vector<float> &GetCalibrationFactors() const {return _calibrationFactor;}
   const std::vector<float> &GetCalibrationFactorsTemperatureCorrected() const {return _calibrationFactorTemperatureCorrected;}
+  const std::vector<float> &GetNoiseRate() const {return _noise;}
+  const std::vector<float> &GetXtalkProbability() const {return _xtalk;}
 
   private:
   int                 _numberOfFebs;
@@ -70,6 +72,8 @@ class Calibration
   std::vector<float>  _pedestal;
   std::vector<float>  _calibrationFactor;
   std::vector<float>  _calibrationFactorTemperatureCorrected;
+  std::vector<float>  _noise;
+  std::vector<float>  _xtalk;
 
   Calibration();
 };
@@ -84,6 +88,8 @@ Calibration::Calibration(const std::string &calibFileName, const int numberOfFeb
   _pedestal.resize(_numberOfFebs*_channelsPerFeb);
   _calibrationFactor.resize(_numberOfFebs*_channelsPerFeb);
   _calibrationFactorTemperatureCorrected.resize(_numberOfFebs*_channelsPerFeb);
+  _noise.resize(_numberOfFebs*_channelsPerFeb);
+  _xtalk.resize(_numberOfFebs*_channelsPerFeb);
   std::string tmp;
 
   getline(calibFile,tmp);
@@ -92,12 +98,14 @@ Calibration::Calibration(const std::string &calibFileName, const int numberOfFeb
     getline(calibFile,tmp); //table header
     _newFormat=true;
     int i, j;
-    float pedestalTmp, calibrationFactorTmp, calibrationFactorTemperatureCorrectedTmp;
-    while(calibFile >> i >> j >> pedestalTmp >> calibrationFactorTmp >> calibrationFactorTemperatureCorrectedTmp)
+    float pedestalTmp, calibrationFactorTmp, calibrationFactorTemperatureCorrectedTmp, noiseTmp, xtalkTmp;
+    while(calibFile >> i >> j >> pedestalTmp >> calibrationFactorTmp >> calibrationFactorTemperatureCorrectedTmp >> noiseTmp >> xtalkTmp)
     {
       _pedestal.at(i*_channelsPerFeb+j)=pedestalTmp;
       _calibrationFactor.at(i*_channelsPerFeb+j)=calibrationFactorTmp;
       _calibrationFactorTemperatureCorrected.at(i*_channelsPerFeb+j)=calibrationFactorTemperatureCorrectedTmp;
+      _noise.at(i*_channelsPerFeb+j)=noiseTmp;
+      _xtalk.at(i*_channelsPerFeb+j)=xtalkTmp;
     }
     calibFile.close();
     return;
@@ -322,6 +330,7 @@ class CrvEvent
   TGraph  *GetHistTemperaturesFEB(int feb, int channel) {return _histTemperaturesFEB[feb*_channelsPerFeb+channel];}
   void     ReadChannelMap(const std::string &channelMapFile);
   void     TrackFit();
+  int      GetMaxedOutEvents(int feb, int channel) {return _maxedOut[feb*_channelsPerFeb+channel];}
 
   private:
   CrvEvent();
@@ -364,6 +373,7 @@ class CrvEvent
   int    *_recoStartBin;
   int    *_recoEndBin;
   float  *_pedestal;
+  int    *_maxedOut;
 
   int    *_fitStatusReflectedPulse;
   float  *_PEsReflectedPulse;
@@ -380,7 +390,6 @@ class CrvEvent
   std::vector<TH1F*>    _histPEs, _histPEsTemperatureCorrected;
   std::vector<TGraph*>  _histTemperatures;
   std::vector<TGraph*>  _histTemperaturesFEB;
-
 
   //for track fits
   ChannelMapType _channelMap;
@@ -440,6 +449,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _recoStartBin            = new int[_numberOfFebs*_channelsPerFeb];
   _recoEndBin              = new int[_numberOfFebs*_channelsPerFeb];
   _pedestal                = new float[_numberOfFebs*_channelsPerFeb];
+  _maxedOut                = new int[_numberOfFebs*_channelsPerFeb];
 
   _fitStatusReflectedPulse               = new int[_numberOfFebs*_channelsPerFeb];
   _PEsReflectedPulse                     = new float[_numberOfFebs*_channelsPerFeb];
@@ -499,6 +509,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
+      _maxedOut[index]=0;
       _lastSpillIndex[index]=-1;
       _plot[index]=4;
       _canvas[index]=new TCanvas();
@@ -647,6 +658,12 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
         double temperatureFEB=_boardStatus[i*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
         _histTemperaturesFEB[index]->SetPoint(_histTemperaturesFEB[index]->GetN(),_spillIndex,temperatureFEB);
         _lastSpillIndex[index]=_spillIndex;
+      }
+
+      //check, if ADCs have maxed-out
+      for(int iSample=0; iSample<_numberOfSamples; ++iSample)
+      {
+        if(_adc[index*_numberOfSamples+iSample]==2047) {++_maxedOut[index]; break;}
       }
     }
   }
@@ -893,7 +910,7 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
 {
     float maxX=0;
     float maxValue=0;
-    for(int i=8; i<=h.GetNbinsX(); i++)
+    for(int i=0; i<=h.GetNbinsX(); i++)
     {
       if(h.GetBinContent(i)>maxValue) {maxValue=h.GetBinContent(i); maxX=h.GetBinCenter(i);}
     }
@@ -902,7 +919,6 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
     //Fit range
     Double_t fitRangeStart=0.7*maxX;
     Double_t fitRangeEnd  =1.3*maxX;
-    if(fitRangeStart<15.0) fitRangeStart=15.0;
 
     TF1 fit("Poisson",PoissonFunction,fitRangeStart,fitRangeEnd,3);
     fit.SetParameter(0,maxValue/TMath::Poisson(maxX,maxX));  //"height" of the function
@@ -1050,8 +1066,8 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 
 void StorePEyields(const std::string &runNumber, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
                    const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2], const std::vector<float> chi2s[2],
-                   const std::vector<float> &meanTemperatures, const std::vector<float> &stddevTemperatures, TTree *treeSpills, int nEventsActual, const Calibration &calib,
-                   const TemperatureCorrections &tc)
+                   const std::vector<float> &meanTemperatures, const std::vector<float> &stddevTemperatures, const std::vector<float> &maxedOutFraction,
+                   TTree *treeSpills, int nEventsActual, const Calibration &calib, const TemperatureCorrections &tc)
 {
   int   run=0;
   int   subrun=0;
@@ -1075,9 +1091,12 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   float *chi2sTSummary = const_cast<float*>(chi2s[1].data());
   float *meanTemperaturesSummary = const_cast<float*>(meanTemperatures.data());
   float *stddevTemperaturesSummary = const_cast<float*>(stddevTemperatures.data());
+  float *maxedOutFractionSummary = const_cast<float*>(maxedOutFraction.data());
   float *pedestals = const_cast<float*>(calib.GetPedestals().data());
   float *calibConstants = const_cast<float*>(calib.GetCalibrationFactors().data());
   float *calibConstantsT = const_cast<float*>(calib.GetCalibrationFactorsTemperatureCorrected().data());
+  float *noiseRate = const_cast<float*>(calib.GetNoiseRate().data());
+  float *xtalkProbability = const_cast<float*>(calib.GetXtalkProbability().data());
   TTree *recoTreeSummary = new TTree("runSummary","runSummary");
   recoTreeSummary->Branch("runNumber", &run, "runNumber/I");
   recoTreeSummary->Branch("subrunNumber", &subrun, "subrunNumber/I");
@@ -1102,9 +1121,12 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   recoTreeSummary->Branch("chi2sTemperatureCorrected", chi2sTSummary, Form("chi2sTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("meanTemperatures", meanTemperaturesSummary, Form("meanTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("stddevTemperatures", stddevTemperaturesSummary, Form("stddevTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("maxedOutFraction", maxedOutFractionSummary, Form("maxedOutFraction[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("pedestals", pedestals, Form("pedestals[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("calibConstants", calibConstants, Form("calibConstants[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("calibConstantsTemperatureCorrected", calibConstantsT, Form("calibConstantsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("noiseRate", noiseRate, Form("noiseRate[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("xtalkProbability", xtalkProbability, Form("xtalkProbability[%i][%i]/F",numberOfFebs,channelsPerFeb));
 
   size_t underscorePos = runNumber.rfind('_');
   if(underscorePos==std::string::npos) run=atoi(runNumber.c_str());
@@ -1125,13 +1147,13 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   txtFile<<"overvoltage: "<<tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
   txtFile<<"calib: "<<tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)   ";
   txtFile<<"PEs: "<<tc.PEOvervoltageChange<<" 1/V"<<std::endl;
-  txtFile<<"  FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr"<<std::endl;
+  txtFile<<"  FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr maxedOut  noise  xtalk"<<std::endl;
 
   std::cout<<"reference temp: "<<tc.referenceTemperatureCMB<<" deg C (CMB), "<<tc.referenceTemperatureFEB<<" deg C (FEB)   ";
   std::cout<<"overvoltage: "<<tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
   std::cout<<"calib: "<<tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)   ";
   std::cout<<"PEs: "<<tc.PEOvervoltageChange<<" 1/V"<<std::endl;
-  std::cout<<"         FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr"<<std::endl;
+  std::cout<<"         FEB  Channel     PE     PE Temp Corr    FWHM                   Signals              meanTemp    pedestal  calibConst  calibConst Temp Corr maxedOut  noise  xtalk"<<std::endl;
 
   for(int i=0; i<numberOfFebs; i++)
   {
@@ -1153,7 +1175,11 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
       txtFile<<std::setw(8)<<meanTemperatures[index]<<"     ";
       txtFile<<std::setw(8)<<calib.GetPedestals()[index]<<"  ";
       txtFile<<std::setw(8)<<calib.GetCalibrationFactors()[index]<<"  ";
-      txtFile<<std::setw(8)<<calib.GetCalibrationFactorsTemperatureCorrected()[index]<<std::endl;
+      txtFile<<std::setw(8)<<calib.GetCalibrationFactorsTemperatureCorrected()[index]<<"  ";
+      txtFile<<std::setprecision(3);
+      txtFile<<std::setw(8)<<maxedOutFraction[index]<<"  ";
+      txtFile<<std::setw(8)<<calib.GetNoiseRate()[index]<<"  ";
+      txtFile<<std::setw(8)<<calib.GetXtalkProbability()[index]<<std::endl;
 
       std::cout<<std::fixed;
       std::cout<<std::setprecision(1);
@@ -1169,7 +1195,11 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
       std::cout<<std::setw(8)<<meanTemperatures[index]<<"     ";
       std::cout<<std::setw(8)<<calib.GetPedestals()[index]<<"  ";
       std::cout<<std::setw(8)<<calib.GetCalibrationFactors()[index]<<"  ";
-      std::cout<<std::setw(8)<<calib.GetCalibrationFactorsTemperatureCorrected()[index]<<std::endl;
+      std::cout<<std::setw(8)<<calib.GetCalibrationFactorsTemperatureCorrected()[index]<<"  ";
+      std::cout<<std::setprecision(3);
+      std::cout<<std::setw(8)<<maxedOutFraction[index]<<"  ";
+      std::cout<<std::setw(8)<<calib.GetNoiseRate()[index]<<"  ";
+      std::cout<<std::setw(8)<<calib.GetXtalkProbability()[index]<<std::endl;
     }
   }
   txtFile.close();
@@ -1425,10 +1455,13 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   std::vector<float> chi2s[2];
   std::vector<float> meanTemperatures;
   std::vector<float> stddevTemperatures;
+  std::vector<float> maxedOutFraction;
   for(int feb=0; feb<numberOfFebs; feb++)
   {
     for(int channel=0; channel<channelsPerFeb; channel++)
     {
+      maxedOutFraction.push_back(((float)event.GetMaxedOutEvents(feb,channel))/nEvents);
+
       TH1F      *h[2];
       TPaveText *t[2];
       for(int i=0; i<2; ++i)
@@ -1462,6 +1495,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         t[i]->AddText(Form("FWHM: %.1f PEs",fwhm));
         t[i]->AddText(Form("Signals: %.0f",nsignals));
         t[i]->AddText(Form("Chi2/Ndf: %.3f",chi2));
+        t[i]->AddText(Form("maxed out: %.3f",maxedOutFraction.back()));
         t[i]->Draw("same");
       } 
 
@@ -1504,7 +1538,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
     }
   }
 
-  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, chi2s, meanTemperatures, stddevTemperatures, treeSpills, nEvents, calib, tc);
+  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, chi2s, meanTemperatures, stddevTemperatures, maxedOutFraction, treeSpills, nEvents, calib, tc);
 
   Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, tc);
 
