@@ -78,7 +78,7 @@ class Calibration
   Calibration();
 };
 
-Calibration::Calibration(const std::string &calibFileName, const int numberOfFebs, const int channelsPerFeb) : 
+Calibration::Calibration(const std::string &calibFileName, const int numberOfFebs, const int channelsPerFeb) :
                          _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _newFormat(false)
 {
   std::ifstream calibFile;
@@ -123,7 +123,7 @@ Calibration::Calibration(const std::string &calibFileName, const int numberOfFeb
   }
   for (int i=0; i<numberOfFebs; i++)
   {
-    for (int j=0; j<_channelsPerFeb; j++) 
+    for (int j=0; j<_channelsPerFeb; j++)
     {
       calibFile>>tmp;
       _calibrationFactor[i*_channelsPerFeb+j]=atof(tmp.c_str());
@@ -138,7 +138,7 @@ class CrvRecoEvent
   CrvRecoEvent();
 
   public:
-  CrvRecoEvent(int signalRegionStart, int signalRegionEnd) : _f("peakfitter","[0]*(TMath::Exp(-(x-[1])/[2]-TMath::Exp(-(x-[1])/[2])))"), _signalRegionStart(signalRegionStart), _signalRegionEnd(signalRegionEnd) {Init();} 
+  CrvRecoEvent(int signalRegionStart, int signalRegionEnd) : _f("peakfitter","[0]*(TMath::Exp(-(x-[1])/[2]-TMath::Exp(-(x-[1])/[2])))"), _signalRegionStart(signalRegionStart), _signalRegionEnd(signalRegionEnd) {Init();}
   void Init();
   bool FailedFit(TFitResultPtr fr);
   void PeakFitter(const short* data, int numberOfSamples, float pedestal, float calibrationFactor, bool &draw);
@@ -190,13 +190,13 @@ void CrvRecoEvent::PeakFitter(const short* data, int numberOfSamples, float pede
   std::vector<std::pair<float, std::pair<int,int> > > peaks;    //std::pair<ADC, std::pair<peakbinsStart,peakbinsEnd> >
                                                                 //for peaks where two more more consecutive ADC values are equal
                                                                 //(e.g. if the max ADC value is reached)
-                                                                //the beginning and end of these peak bins is indicated by 
+                                                                //the beginning and end of these peak bins is indicated by
                                                                 //peakbinsStart and peakbinsEnd.
                                                                 //the actual peak is probably in between this interval
                                                                 //(relevant for the seed value of the fit)
   int peakBinsStart=0;
   int peakBinsEnd=0;
-  for(int bin=_signalRegionStart; bin<=std::min(_signalRegionEnd,numberOfSamples); bin++) 
+  for(int bin=_signalRegionStart; bin<=std::min(_signalRegionEnd,numberOfSamples); bin++)
   {
     waveform.push_back(data[bin]-pedestal);
     if(bin<=_signalRegionStart) continue;
@@ -255,7 +255,7 @@ void CrvRecoEvent::PeakFitter(const short* data, int numberOfSamples, float pede
     //fill the graph
     float binWidth=1.0/RATE;
     TGraph g;
-    for(int bin=_recoStartBin[i]; bin<=_recoEndBin[i]; bin++) 
+    for(int bin=_recoStartBin[i]; bin<=_recoEndBin[i]; bin++)
     {
       float t=bin*binWidth;
       float v=waveform[bin];
@@ -278,7 +278,7 @@ void CrvRecoEvent::PeakFitter(const short* data, int numberOfSamples, float pede
       _PEs[i]         = waveform[peakBinsStart]*TMath::E()*DEFAULT_BETA/calibrationFactor; //using maximum ADC value of this pulse and a typical value of beta
       _pulseHeight[i] = waveform[peakBinsStart];
       _time[i]        = averagePeakBin*binWidth;
-      _beta[i]        = DEFAULT_BETA; 
+      _beta[i]        = DEFAULT_BETA;
       _LEtime[i]      = _time[i]-0.985*DEFAULT_BETA;   //time-0.985*beta for 50% pulse height
       _fitStatus[i]   = 2;
       draw            = false;
@@ -322,7 +322,7 @@ class CrvEvent
            TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections, float PEcut);
   void     Reconstruct(int entry, const Calibration &calib);
   TCanvas *GetCanvas(int feb, int channel) {return _canvas[feb*_channelsPerFeb+channel];}
-  TH1F    *GetHistPEs(int i, int feb, int channel) 
+  TH1F    *GetHistPEs(int i, int feb, int channel)
            {
              return (i==0?_histPEs[feb*_channelsPerFeb+channel]:_histPEsTemperatureCorrected[feb*_channelsPerFeb+channel]);
            }
@@ -344,7 +344,7 @@ class CrvEvent
   int _numberOfFebs;
   int _channelsPerFeb;
   int _numberOfSamples;
-  
+
   TTree *_tree;
   TTree *_recoTree;
 
@@ -584,7 +584,7 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
         temperatureFEB=_boardStatus[i*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
       }
 
-      if(_temperature[index]>-300 && temperatureFEB>-300) //temperature of -1000 means no temperature found
+      if(fabs(_temperature[index])<100 && fabs(temperatureFEB)<100) //temperature of -1000 means no temperature found
       {
         //overvoltage difference for actual CMB and FEB temperatures w.r.t. reference CMB and FEB temperatures
         //deltaOvervoltage = overvoltageTemperatureChangeCMB*(TCMB-TrefCMB) + overvoltageTemperatureChangeFEB*(TFEB-TrefFEB)
@@ -767,7 +767,7 @@ void CrvEvent::TrackFit()
 void CrvEvent::ReadChannelMap(const std::string &channelMapFile)
 {
   std::ifstream file(channelMapFile);
-  if(!file.is_open()) {std::cerr<<"Channel map file could not be opened."<<std::endl; exit(1);}
+  if(!file.is_open()) {std::cout<<"Channel map file could not be opened."<<std::endl; return;}
 
   std::string header;
   getline(file,header);
@@ -790,7 +790,7 @@ void CrvEvent::ReadChannelMap(const std::string &channelMapFile)
   file.close();
 }
 
-double LandauGaussFunction(double *x, double *par) 
+double LandauGaussFunction(double *x, double *par)
 {
     //From $ROOTSYS/tutorials/fit/langaus.C
     //Fit parameters:
@@ -830,7 +830,7 @@ double LandauGaussFunction(double *x, double *par)
     step = (xupp-xlow) / np;
 
     // Convolution integral of Landau and Gaussian by sum
-    for(i=1.0; i<=np/2; i++) 
+    for(i=1.0; i<=np/2; i++)
     {
       xx = xlow + (i-.5) * step;
       fland = TMath::Landau(xx,mpc,par[0]) / par[0];
@@ -862,7 +862,7 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
     float fitRangeEnd  =2.0*maxX;
     if(fitRangeStart<15.0) fitRangeStart=15.0;
 
-    //Parameters 
+    //Parameters
     Double_t startValues[4], parLimitsLow[4], parLimitsHigh[4];
     //Most probable value
     startValues[1]=maxX;
@@ -939,7 +939,7 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
     signals = fit.Integral(0,150);
 }
 
-void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual, 
+void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual,
                     float *febTemperaturesAvg, float *supplyMonitorsAvg, float *biasVoltagesAvg, int *pipeline, int *samples, Long64_t &timestamp) //time_t
 {
   if(!treeSpills->GetBranch("spill_boardStatus")) return;  //older file: board status was not stored
@@ -964,7 +964,7 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
   bool  foundFeb[numberOfFebs]={false};
   for(int feb=0; feb<numberOfFebs; ++feb)
   {
-    febID[feb]=0; 
+    febID[feb]=0;
     febTemperaturesAvg[feb]=0;
     pipeline[feb]=0;
     samples[feb]=0;
@@ -1138,9 +1138,9 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
 
   std::ofstream txtFile;
   txtFile.open(txtFileName.c_str(),std::ios_base::trunc);
- 
+
   timestamp=0;
-  nSpillsActual=0; 
+  nSpillsActual=0;
   BoardRegisters(treeSpills, txtFile, numberOfFebs, febID, nSpillsActual, nFebSpillsActual, febTemperaturesAvg, supplyMonitorsAvg, biasVoltagesAvg, pipeline, samples, timestamp);
 
   txtFile<<"reference temp: "<<tc.referenceTemperatureCMB<<" deg C (CMB), "<<tc.referenceTemperatureFEB<<" deg C (FEB)   ";
@@ -1228,7 +1228,7 @@ std::string CreateSequenceString(const std::vector<int> channels)
   }
   return sequence;
 }
-void Summarize(const std::string &pdfFileName, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb, 
+void Summarize(const std::string &pdfFileName, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
                const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const TemperatureCorrections &tc)
 {
   std::ifstream settingsFile;
@@ -1426,7 +1426,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   recoFile.mkdir("plots");
   TTree *recoTree = new TTree("run","run");
   TTree *recoTreeSpill = treeSpills->CloneTree();
-	
+
   int numberOfFebs;
   int channelsPerFeb;
   int numberOfSamples;
@@ -1435,7 +1435,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->SetBranchAddress("spill_number_of_samples", &numberOfSamples);
   treeSpills->GetEntry(0);  //to read the numberOfFebs, channelsPerFeb, and numberOfSamples
 
-  Calibration calib(calibFileName, numberOfFebs, channelsPerFeb); 
+  Calibration calib(calibFileName, numberOfFebs, channelsPerFeb);
   CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, tc, PEcut);
   if(channelMapFile!="") event.ReadChannelMap(channelMapFile);
 
@@ -1497,7 +1497,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         t[i]->AddText(Form("Chi2/Ndf: %.3f",chi2));
         t[i]->AddText(Form("maxed out: %.3f",maxedOutFraction.back()));
         t[i]->Draw("same");
-      } 
+      }
 
       event.GetCanvas(feb, channel)->cd(2);
       TPaveText tt(0.48,0.72,0.88,0.88,"NDC");
@@ -1594,7 +1594,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
   dirFile.close();
 
   bool found=false;
-  for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(crvDirName)) 
+  for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(crvDirName))
   {
     const std::string s = dirEntry.path().filename().string();
     const std::string s0 = "crv.parsed.";
@@ -1615,7 +1615,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
   if(!found)
   {
 //try Ray's version of file names
-    for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(crvDirName)) 
+    for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(crvDirName))
     {
       const std::string s = dirEntry.path().filename().string();
       const std::string s0 = "ntd.mu2e.";
