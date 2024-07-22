@@ -167,6 +167,49 @@ geom_dict_crvaging008 = {
     'canvasSize'    : (8,8)
 }
 
+geom_dict_crvaging009 = {
+    'tag'           : 'config_009_CRV_T_A',
+    'module'        : ['CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD'],
+    'moduleOffsetX' : [0., 0., 0., 0.],
+    'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(4)],
+    'FEB'           : [[0, -1], [1,2], [3,4], [-1,5]],
+    'nFEB'          : 6,
+    'badChannels'   : [],
+    'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)] + 
+                      [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)],
+                      # 2-tuple list if channels are designated in the triggering layers 
+    'canvasSize'    : (8,8)
+}
+
+geom_dict_crvaging010 = {
+    'tag'           : 'config_010_CRV_T_A',
+    'module'        : ['CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD'],
+    'moduleOffsetX' : [0., 0., 0., 0.],
+    'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(4)],
+    'FEB'           : [[0, -1], [1,2], [3,4], [-1,5]],
+    'nFEB'          : 6,
+    'badChannels'   : [],
+    'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)] + 
+                      [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)],
+                      # 2-tuple list if channels are designated in the triggering layers 
+    'canvasSize'    : (8,8)
+}
+
+geom_dict_crvaging011 = {
+    'tag'           : 'config_011_CRV_T_A',
+    'module'        : ['CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD'],
+    'moduleOffsetX' : [0., 0., 0., 0.],
+    'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(4)],
+    'FEB'           : [[0,6], [1,2], [3,4], [7,5]],
+    'nFEB'          : 8,
+    'badChannels'   : [],
+    'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(3, i) for i in range(nChannelPerFEB)] + 
+                      [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)] + 
+                      [(6, i) for i in range(nChannelPerFEB)] + [(7, i) for i in range(nChannelPerFEB)],
+                      # 2-tuple list if channels are designated in the triggering layers 
+    'canvasSize'    : (8,8)
+}
+
 geom_dict_crvled001 = {
     'tag'           : 'config_LED001_CRV_L_A',
     'module'        : ['CRV_L_A_HORSTD'],
@@ -216,6 +259,18 @@ geom_dict_crvled004 = {
     'canvasSize'    : (8,2)
 }
 
+geom_dict_crvled005 = {
+    'tag'           : 'config_LED005_CRV_T_A',
+    'module'        : ['CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_A_HORSTD'],
+    'moduleOffsetX' : [0., 0., 0., 0.],
+    'moduleOffsetY' : [-i*(moduleThickness+4*25.4) for i in range(4)],
+    'FEB'           : [[0,6], [1,2], [3,4], [7,5]],
+    'nFEB'          : 8,
+    'badChannels'   : [],
+    'triggerOnlyChs': [],
+    'canvasSize'    : (8,8)
+}
+
 # setup_dict can be used to retrieve geom dict (and number of FEBs) from the file names
 setup_dict = {'crvaging-001': [geom_dict_crvaging001],
               'crvaging-003': [geom_dict_crvaging003],
@@ -224,7 +279,11 @@ setup_dict = {'crvaging-001': [geom_dict_crvaging001],
               'crvaging-006': [geom_dict_crvaging006],
               'crvaging-007': [geom_dict_crvaging007],
               'crvaging-008': [geom_dict_crvaging008],
+              'crvaging-009': [geom_dict_crvaging009],
+              'crvaging-010': [geom_dict_crvaging010],
+              'crvaging-011': [geom_dict_crvaging011],
               'crvled-001'  : [geom_dict_crvled001],
               'crvled-002'  : [geom_dict_crvled002],
               'crvled-003'  : [geom_dict_crvled003],
-              'crvled-004'  : [geom_dict_crvled004]}
+              'crvled-004'  : [geom_dict_crvled004],
+              'crvled-005'  : [geom_dict_crvled005]}

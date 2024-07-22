@@ -44,9 +44,9 @@ class crv_spill:
                          "supply15V", "supply10V", "supply5V", "supplyN5V", 
                          "supply3V3", "supply2V5", "supply1V8", "supply1V2", 
                          "busSiPMBias", "TrigCtrlReg", "settingPipelineLen", "settingSampleLen",
-                         "tsEpoch",
+                         "tsEpoch", "bulkBiasRdbk", "temperatureCMB", "fpgaBlocks",
                          # operation containers
-                         "temperatureCMB", # getTempCMB provides array of [nFEB][nChannelPerFEB]
+                         #"temperatureCMB", # getTempCMB provides array of [nFEB][nChannelPerFEB]
                          "dqmRedFlag"
                          ]
         for item in attributeList:
@@ -56,6 +56,9 @@ class crv_spill:
         self.iSpill = iSpill
         self.isRaw = isRaw
 
+        self.runNumber = spilltree.runNumber # runNumber/I 
+        self.subrunNumber = spilltree.subrunNumber # subrunNumber/I  
+        
         self.spillIndex = spilltree.spill_index # spill_index/I
         self.spillNumber = spilltree.spill_num # spill_num/I
         self.nEvents = spilltree.spill_nevents # spill_nevents/I
@@ -96,6 +99,10 @@ class crv_spill:
         # Bit 7: Not used.
         # Bit 8: On card test pulser enabled
         # Bit 9: Test pulser enabled for one spill only
+
+        self.bulkBiasRdbk = np.reshape(np.array(spilltree.spill_biasVoltage, dtype=np.float32), (self.nFEB, geometry_constants.nChannelPerFEB)) # spill_biasVoltage[6][64]/F
+        self.temperatureCMB = np.reshape(np.array(spilltree.spill_temperature, dtype=np.float32), (self.nFEB, geometry_constants.nChannelPerFEB)) # spill_temperature[6][64]/F
+        self.fpgaBlocks = np.reshape(np.array(spilltree.spill_FPGABlocks, dtype=np.int32), (self.nFEB, 4, 38))# spill_FPGABlocks[6][4][38]/I # 38 words regs for 4 fpgas. 24 AFE DAC regs, 30-3F trims, 40-43 LEDs,44-45 bus; 4 AFE Temperatures; 10 AFE ultrasound regs
 
         if hasattr(spilltree, "spill_timestamp"):
             self.tsEpoch = spilltree.spill_timestamp

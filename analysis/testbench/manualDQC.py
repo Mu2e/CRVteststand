@@ -12,7 +12,8 @@ manual_reset_spillNum_offset_dict = {(1308,  0): [ 26], #seemingly spillNumber s
                                      (1248,  1): [653], 
                                      (1271,  0): [ 24],
                                      (1161,  0): [434, 441, 466, 481], 
-                                     (1208,  0): [34]
+                                     (1208,  0): [ 34],
+                                     (1694,  0): [  1] # 0?
                                     }
 
 # dqmRedFlag that needs to be manually changed

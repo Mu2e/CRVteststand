@@ -135,8 +135,11 @@ datatag = { #updated to 1420. #FIXME: tag previous runs
           "crvaging008": {
               "type":"cosmics", 
               "config":"crvaging-008",
-              "run#":[1419, 1420]}, 
-    
+              "run#":[1421, 1619, 1631, 1632]}, #1419, 1420 removed for being too short
+          "crvaging009": {
+              "type":"cosmics", 
+              "config":"crvaging-009",
+              "run#":[1634]}, #1633 removed for being too short
           "trim_scan": {
               "type":"cosmics", 
               "config":"crvaging-006",
@@ -211,7 +214,95 @@ datatag = { #updated to 1420. #FIXME: tag previous runs
                           False, False, False, False, False, False, False, False, False, False, True, True, True, 
                           False, False, False, False, False, False, False, False, False, False, True, True, True, 
                           False, False, False, False, False, False, False, False, False, False, True, True, True, 
-                          False, False, False, False, False, False, False, False, False, False, True, True, True]}
+                          False, False, False, False, False, False, False, False, False, False, True, True, True]},
+          "SiDetFEBScan": {
+              "type":"led", 
+              "config":"crvled-004",
+              "run#":[1599, 1601, 1602], # run 1600 had 9/10 empty spills, ignore... 
+              "tempN":[10., 30., 40.]},
+              # "run#":[1599, 1600, 1601, 1602],
+              # "tempN":[10., 20., 30., 40.]}
+          "gainAFEScan": {
+              "type":"led", 
+              "config":"crvled-003",
+              "run#":[1620, 1621, 1622, 1623, 1624, 1625, 
+                      1626, 1627, 1628, 1629, 1630],
+              "gainAFE":[0x000, 0x800, 0x400, 0xc00, 0x180, 0x600,
+                         0x280, 0x100, 0x200, 0x080, 0x300]},
+          "bulk_scan_crvaging011_0": {
+              "type":"led", 
+              "config":"crvled-005",
+              "run#":[1694, 1695, 1696, 1697, 1698],
+              "bulk":[-25, 0, +25, +50, +75]},
+          "bulk_scan_crvaging011_1": {
+              "type":"led", 
+              "config":"crvled-005",
+              "run#":[1700, 1701, 1702, 1703, 1704],
+              "bulk":[-25, 0, +25, +50, +75]},
+          "SiDet2GainCalib": {
+              "type":"led",
+              "config":"crvled-004",
+              "run#":list(range(1755, 1824+1)),
+              "tempN":[25.]*len(range(1755, 1824+1)),
+              "VoverN":[1.5+i*0.5 for j in range(7) for i in range(10)],
+              "gainAFE":[0x384]*10 + [0x354]*10 + [0x3b4]*10 + [0x3a4]*10 + [0x364]*10 + [0x374]*10 + [0x394]*10},
+          "SiDet2CMBScan": {
+              "type":"led",
+              "config":"crvled-004",
+              "run#":list(range(1827, 1936+1)),
+              "VoverN":[1.5+i*0.5 for j in range(11) for i in range(10)],
+              # "gainAFE": vairous gain, n/a
+              "VppN":[53.0+i*0.5 for i in range(10)] + \
+                     [53.3+i*0.5 for i in range(10)] + \
+                     [53.5+i*0.5 for i in range(10)] + \
+                     [53.8+i*0.5 for i in range(10)] + \
+                     [52.7+i*0.5 for i in range(10)] + \
+                     [52.5+i*0.5 for i in range(10)] + \
+                     [52.2+i*0.5 for i in range(10)] + \
+                     [51.9+i*0.5 for i in range(10)] + \
+                     [51.7+i*0.5 for i in range(10)] + \
+                     [51.4+i*0.5 for i in range(10)] + \
+                     [51.1+i*0.5 for i in range(10)],
+              "tempSetup": [25.0]*10 + [30.0]*10 + [35.0]*10 + [40.0]*10 + [20.0]*10 + [15.0]*10 + [10.0]*10 + [5.0]*10 + [0.0]*10 + [-5.0]*10 + [-10.0]*10,
+              "tempSensor": [25.0]*10 + [29.9]*10 + [34.9]*10 + [39.8]*10 + [20.1]*10 + [15.2]*10 + [10.3]*10 + [5.3]*10 + [0.4]*10 + [-4.4]*10 + [-9.4]*10},
+          "SiDet1CMBScan": {
+              "type":"led",
+              "config":"crvled-004",
+              "run#":[1434, 1433, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1442, 
+                      1452, 1443, 1444, 1445, 1446, 1447, 1448, 1449, 1450, 1451,
+                      1456, 1457, 1458, 1459, 1460, 1461, 1462, 1463, 1464, 1465,
+                      1497, 1498, 1499, 1500, 1501, 1502, 1503, 1504, 1505, 1506,
+                      1482, 1483, 1484, 1485, 1486, 1487, 1488, 1489, 1490, 1493, 
+                      1516, 1517, 1518, 1519, 1520, 1521, 1522, 1523, 1524, 1525, 
+                      1532, 1534, 1535, 1536, 1537, 1538, 1539, 1540, 1541, 1542, 
+                      1547, 1548, 1549, 1550, 1551, 1552, 1553, 1554, 1555, 1556,
+                      1560, 1561, 1562, 1563, 1564, 1565, 1566, 1567, 1568, 1569,
+                      1573, 1574, 1575, 1576, 1577, 1578, 1579, 1580, 1581, 1582,
+                      1586, 1587, 1588, 1589, 1590, 1591, 1592, 1593, 1594, 1595],
+              "VoverN":[1.5+i*0.5 for j in range(11) for i in range(10)],
+              # "gainAFE": vairous gain, n/a
+              "VppN":[53.0+i*0.5 for i in range(10)] + \
+                     [53.3+i*0.5 for i in range(10)] + \
+                     [53.5+i*0.5 for i in range(10)] + \
+                     [53.8+i*0.5 for i in range(10)] + \
+                     [52.7+i*0.5 for i in range(10)] + \
+                     [52.5+i*0.5 for i in range(10)] + \
+                     [52.2+i*0.5 for i in range(10)] + \
+                     [51.9+i*0.5 for i in range(10)] + \
+                     [51.7+i*0.5 for i in range(10)] + \
+                     [51.4+i*0.5 for i in range(10)] + \
+                     [51.1+i*0.5 for i in range(10)],
+              "tempSetup": [25.0]*10 + [30.0]*10 + [35.0]*10 + [40.0]*10 + [20.0]*10 + [15.0]*10 + [10.0]*10 + [5.0]*10 + [0.0]*10 + [-5.0]*10 + [-10.0]*10,
+              "tempSensor": [25.0]*10 + [30.0]*10 + [35.0]*10 + [40.0]*10 + [20.0]*10 + [15.3]*10 + [10.3]*10 + [5.3]*10 + [0.4]*10 + [-4.4]*10 + [-9.4]*10},
+          "SiDet2DynamicVbias": {
+              "type":"led",
+              "config":"crvled-004",
+              "run#":list(range(1939, 2002+1))
+              # "VoverN": 54.5V at 25 degC ref temp, dynamic correction with CMB correction only. 
+              #           AFE0 tracking CMB0 only.
+              # "gainAFE": vairous gain, n/a
+              # "VppN": n/a
+          }
 }
 
 # temperature scan data tags, exist for compatibility reasons

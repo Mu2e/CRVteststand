@@ -368,7 +368,7 @@ def processSubRun(filename, fROOT_output, spill_summary_tree, subrun_summary_tre
         isRaw = True
     runNum = filepath.filenameparser(filename, 'run')
     subrunNum = filepath.filenameparser(filename, 'subrun')
-    runType = "cosmics" if isCosmic else "LED"
+    runType = "cosmics" # if isCosmic else "LED"
     spectrumNameStem = "run_%06i_%03i_"%(runNum,subrunNum)+runType+"_"
     
     root_utils.treeEntryDictPurge(spill_summary_branch_list, spill_summary_entry_dict)

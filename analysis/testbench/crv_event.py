@@ -350,12 +350,16 @@ class crv_event:
                         pedestalHist[iFEB][iCh].Fill(data[i])
         return local_ped
 
-    def FillCalibrationHistogramsStock(self, all_pedestals, rawCalibHist, temperatureCorrectedCalibHist = None):
+    def FillCalibrationHistogramsStock(self, all_pedestals, rawCalibHist, temperatureCorrectedCalibHist = None, returnRaw = False):
     # adaption of calibCrv::CrvEvent::FillCalibrationHistograms for testing purposes       
         global nPreSignalRegions, nNoiseHits
         if self.adc is None:
             sys.exit("ERROR: CRV_event: adc is not loaded")
-            
+        
+        pulseSizeList = None
+        if returnRaw:
+            pulseSizeList = [[[] for iCh in range(geometry_constants.nChannelPerFEB)] for iFEB in range(self.nFEB)]
+        
         for iFEB in range(self.nFEB):
             for iCh in range(geometry_constants.nChannelPerFEB):
                 if np.isnan(self.timeSinceSpill[iFEB][iCh]):
@@ -399,12 +403,12 @@ class crv_event:
                     startBin = maxBin
                     endBin = maxBin
                     for ibin in range(maxBin-1, max(-1, maxBin-5-1), -1):
-                        if waveform[ibin]<=wavform[ibin+1]:
+                        if waveform[ibin]<=waveform[ibin+1]:
                             startBin = ibin
                         else:
                             break
                     for ibin in range(maxBin+1, min(nBins, maxBin+5+1)):
-                        if waveform[ibin]<=wavform[ibin-1]:
+                        if waveform[ibin]<=waveform[ibin-1]:
                             endBin = ibin
                         else:
                             break
@@ -440,7 +444,10 @@ class crv_event:
                         continue
                     
                     pulseArea = fr.Parameter(0)*fr.Parameter(2)
-                    rawCalibHist[iFEB][iCh].Fill(pulseArea)
+                    if rawCalibHist is not None:
+                        rawCalibHist[iFEB][iCh].Fill(pulseArea)
+                    if returnRaw:
+                        pulseSizeList[iFEB][iCh].append(pulseArea)
                     
                     # temperature correction of noise pulse area
                     if temperatureCorrectedCalibHist is not None:
@@ -449,7 +456,21 @@ class crv_event:
                             temperatureCorrectedCalibHist[iFEB][iCh].Fill(pulseArea)
 
                     # plotting of example 1PE / 2PE plots, temperature plot omitted
-        return
+                    
+                    # housekeeping
+                    fr.IsA().Destructor(fr)
+                    f.IsA().Destructor(f)
+                    g.IsA().Destructor(g)
+                
+                #data = None
+                #waveform = None
+                #peaks = None
+                
+                #del data 
+                #del waveform
+                #del peaks
+                
+        return pulseSizeList
     
     def peakFitter(self, all_pedestals, calibrationFactor, calibrationFactorTemperatureCorrected, fitReflected = True):
     # adaption of recoCrv::CrvRecoEvent::PeakFitter
@@ -554,12 +575,12 @@ class crv_event:
                     tmp_recoStartBin=peakBinsStart-1
                     tmp_recoEndBin=peakBinsEnd+1
                     for ibin in range(peakBinsStart-1, max(-1, peakBinsStart-5-1), -1):
-                        if waveform[ibin]<=wavform[ibin+1]:
+                        if waveform[ibin]<=waveform[ibin+1]:
                             tmp_recoStartBin = ibin
                         else:
                             break
                     for ibin in range(peakBinsEnd+1, min(nBins, peakBinsEnd+5+1)):
-                        if waveform[ibin]<=wavform[ibin-1]:
+                        if waveform[ibin]<=waveform[ibin-1]:
                             tmp_recoEndBin = ibin
                         else:
                             break
