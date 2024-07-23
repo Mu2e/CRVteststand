@@ -64,17 +64,24 @@ class settingsFile:
         newTrim = np.copy(self.trims)
         for iAFE in range(8):
             sumTrims = 0
+            division = 8
             for i in range(8):
                 chNum = iAFE * 8 + i
-                sumTrims += self.trims[chNum]
-            sumDiff = sumTrims - trimGoal * 8
-            moveBulk = int(round(sumDiff / 8 / (MV_PER_BULK / MV_PER_TRIM)))
+                if self.trims[chNum] != 0xdead:
+                    sumTrims += self.trims[chNum]
+                else:
+                    division -= 1
+            sumDiff = sumTrims - trimGoal * division
+            moveBulk = int(round(sumDiff / division / (MV_PER_BULK / MV_PER_TRIM)))
             moveTrim = moveBulk * int(MV_PER_BULK / MV_PER_TRIM)
 
             newBulk[iAFE] += moveBulk
             for i in range(8):
                 chNum = iAFE * 8 + i
-                newTrim[chNum] -= moveTrim
+                if self.trims[chNum] != 0xdead:
+                    newTrim[chNum] -= moveTrim
+                else:
+                    newTrim[chNum] = 0xdead
         self.bulks = newBulk
         self.trims = newTrim
         return
@@ -86,7 +93,10 @@ class settingsFile:
             output = ""
             output += "{:03X}".format(self.bulks[i])+" |"
             for j in range(8):
-                output += ("{:03X}".format(self.trims[i*8+j])+" ")
+                if self.trims[i*8+j]!=0xdead:
+                    output += ("{:03X}".format(self.trims[i*8+j])+" ")
+                else:
+                    output += "Nan "
             output += "|"
             output += "{:03X}".format(self.gains[i])
             print(output)
@@ -101,7 +111,10 @@ class settingsFile:
                     for i, bulk in enumerate(self.bulks):
                         fout.write("wr "+bulkRegs[i]+" "+"{:x}".format(bulk)+"\n")
                     for i, trim in enumerate(self.trims):
-                        fout.write("wr "+trimRegs[i]+" "+"{:x}".format(trim)+"\n")
+                        if trim == 0xdead:
+                            fout.write("# wr "+trimRegs[i]+" dead\n")
+                        else:
+                            fout.write("wr "+trimRegs[i]+" "+"{:x}".format(trim)+"\n")
                     for i, gain in enumerate(self.gains):
                         fout.write("wr "+gainRegs[i]+" "+"{:x}".format(gain)+"\n")
                     for i in range(self.settingEndIndex, len(self.lines)):
@@ -114,7 +127,10 @@ class settingsFile:
                     print("wr "+bulkRegs[i]+" "+"{:x}".format(bulk))
             for i, trim in enumerate(self.trims):
                 if (0b1 << int(i/8)) & AFEmask:
-                    print("wr "+trimRegs[i]+" "+"{:x}".format(trim))
+                    if trim == 0xdead:
+                        print("# wr "+trimRegs[i]+" dead")
+                    else:
+                        print("wr "+trimRegs[i]+" "+"{:x}".format(trim))
             for i, gain in enumerate(self.gains):
                 if (0b1 << i) & AFEmask:
                     print("wr "+gainRegs[i]+" "+"{:x}".format(gain))                        

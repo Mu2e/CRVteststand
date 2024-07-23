@@ -18,6 +18,7 @@ channelToChannel         = 26.
 dicounterTranslationalX  = 2*scintillatorBarWidth + gapSmall + gapLarge
 
 moduleThickness          = strongBackThickness + scintillatorBarThickness*4 + sum(gapBetweenLayers) +aluminumSheetThickness
+moduleWidth              = dicounterTranslationalX*8+layerOffset*3
 
 # layers of a module:
 # 12.7mm aluminum strong back
@@ -210,6 +211,21 @@ geom_dict_crvaging011 = {
     'canvasSize'    : (8,8)
 }
 
+geom_dict_crvaging016 = {
+    'tag'           : 'config_016_CRV_T_A/B',
+    'module'        : ['CRV_T_A_HORSTD', 'CRV_T_A_HORSTD', 'CRV_T_B_HORSTD', 'CRV_T_B_HORSTD'],
+    'moduleOffsetX' : [0., 0., 0.+moduleWidth*1.2, 0.+moduleWidth*1.2],
+    'moduleOffsetY' : [-(i%2)*(moduleThickness+4*25.4) for i in range(4)],
+    'FEB'           : [[0,1], [2,3], [4,5], [6,7]],
+    'nFEB'          : 8,
+    'badChannels'   : [],
+    'triggerOnlyChs': [(0, i) for i in range(nChannelPerFEB)] + [(1, i) for i in range(nChannelPerFEB)] + 
+                      [(4, i) for i in range(nChannelPerFEB)] + [(5, i) for i in range(nChannelPerFEB)] + 
+                      [(6, i) for i in range(nChannelPerFEB)] + [(7, i) for i in range(nChannelPerFEB)],
+                      # 2-tuple list if channels are designated in the triggering layers 
+    'canvasSize'    : (16,5)
+}
+
 geom_dict_crvled001 = {
     'tag'           : 'config_LED001_CRV_L_A',
     'module'        : ['CRV_L_A_HORSTD'],
@@ -282,6 +298,7 @@ setup_dict = {'crvaging-001': [geom_dict_crvaging001],
               'crvaging-009': [geom_dict_crvaging009],
               'crvaging-010': [geom_dict_crvaging010],
               'crvaging-011': [geom_dict_crvaging011],
+              'crvaging-016': [geom_dict_crvaging016],
               'crvled-001'  : [geom_dict_crvled001],
               'crvled-002'  : [geom_dict_crvled002],
               'crvled-003'  : [geom_dict_crvled003],

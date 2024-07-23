@@ -22,7 +22,7 @@ def filenameparser(fullfilename, item):
     runSubrunStr = localFilename.split('.')[-2]
     runNum = int(runSubrunStr.split('_')[0])
     runSubrunSplit = runSubrunStr.split('_')
-    subrunNum = int(runSubrunSplit[1]) if len(runSubrunSplit)>1 else 0
+    subrunNum = int(runSubrunSplit[1]) if len(runSubrunSplit)>1 else None
     if item == 'verstr':
         return passVerStr
     elif item == 'ver':
@@ -48,7 +48,8 @@ def getfullfilelist(label, passVer = 1):
         cmd = "mu2eDatasetFileList "+'.'.join(namestrings)
         buffer = subprocess.check_output(cmd, shell=True, text=True)
         file_list = [f for f in buffer.split('\n') if f.strip()]
-        file_list.sort(key=lambda x:(filenameparser(x,'run'), filenameparser(x,'subrun')))
+        file_list.sort(key=lambda x:(filenameparser(x,'run'), (filenameparser(x,'subrun') if filenameparser(x,'subrun') else -1)))
+        # print(file_list)
         return file_list
 
 def findlinked(fullfilename, label, passVer = 1):
@@ -302,7 +303,12 @@ datatag = { #updated to 1420. #FIXME: tag previous runs
               #           AFE0 tracking CMB0 only.
               # "gainAFE": vairous gain, n/a
               # "VppN": n/a
-          }
+          },
+          "bulk_scan_crvaging016_0": {
+              "type":"led", 
+              "config":"crvaging-016",
+              "run#":[2052, 2053, 2054],#, 2055, 2056],
+              "bulk":[-25, 0, +25]}#, +50, +75]}
 }
 
 # temperature scan data tags, exist for compatibility reasons
@@ -348,7 +354,8 @@ def getfilelist(taglist, filetype = "recoROOT", passVer = 1): # argument can be 
         templist = []
         for file in fullfilelist:
             if filenameparser(file, 'run')==runnumber:
-                templist.append(file)
+                if filenameparser(file, 'subrun') is not None:
+                    templist.append(file)
         if templist:
             filenamelist += templist
         else:
