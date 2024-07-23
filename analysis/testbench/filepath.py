@@ -307,8 +307,8 @@ datatag = { #updated to 1420. #FIXME: tag previous runs
           "bulk_scan_crvaging016_0": {
               "type":"led", 
               "config":"crvaging-016",
-              "run#":[2052, 2053, 2054],#, 2055, 2056],
-              "bulk":[-25, 0, +25]}#, +50, +75]}
+              "run#":[2052, 2053, 2054, 2055, 2056],
+              "bulk":[-25, 0, +25, +50, +75]}
 }
 
 # temperature scan data tags, exist for compatibility reasons
