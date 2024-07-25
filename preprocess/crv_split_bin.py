@@ -69,7 +69,8 @@ for chunk in read_chunk(infile):
         # begin of spill and start of FEB0 always appear within 1kB.
         # this treatment prevents start of spill appear in the chunk but start of FEB0 in the next
     else:
-        beginSpill = [m.start() for m in re.finditer(b'\x12--Begin of spill\r\n', data)]
+        beginSpill = [m.start() for m in re.finditer(b'timestamp', data)]
+        # beginSpill = [m.start() for m in re.finditer(b'\x12--Begin of spill\r\n', data)]
         indexSpill = 0
         splitPt = []
         for iEvent, bEvent in enumerate(beginEvent):
@@ -93,7 +94,7 @@ for chunk in read_chunk(infile):
         
         if splitPt[-1] < (len(data)-2*d):
             splitPt.append((-d))
-
+        
         if data[(splitPt[0]):(splitPt[-1])]:
             for i in range(len(splitPt)-1):
                 # this spill(event) is data[splitPt[i]:splitPt[i+1]]

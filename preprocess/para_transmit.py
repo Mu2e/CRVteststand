@@ -10,10 +10,12 @@ import multiprocessing as mp
 gpvmPool = ["mu2egpvm01.fnal.gov", "mu2egpvm03.fnal.gov"]
 gpvmUsgCount = mp.Manager().Array('i',[0, 0])
 lock = mp.Manager().Lock()
-userName = "yongyiwu"
-#nMaxProcessPerGpvm = min(3, int(mp.cpu_count()/len(gpvmPool)))
-nMaxProcessPerGpvm = min(2, int(mp.cpu_count()/len(gpvmPool)))
+userName = "mu2epro"
+#userName = "yongyiwu"
+nMaxProcessPerGpvm = min(3, int(mp.cpu_count()/len(gpvmPool)))
+#nMaxProcessPerGpvm = min(2, int(mp.cpu_count()/len(gpvmPool)))
 destination = "/pnfs/mu2e/persistent/users/mu2epro/RDM/remote/crv/output/"
+#destination = "/mu2e/data/crv/wideband/"
 print ("CPU count = ", mp.cpu_count())
 print ("Destination GPVMs are ", gpvmPool)
 print ("Destination dir is ", destination)
@@ -22,6 +24,8 @@ print ("Max transmission per GPVM is", nMaxProcessPerGpvm)
 fileSpec = sys.argv[1]
 filelist = glob.glob(fileSpec)
 print (len(filelist), "files to transmit...\n")
+if len(sys.argv) > 2:
+    userName = sys.argv[2]
 
 def transmitOneFile(filename):
     global gpvmPool, gpvmUsgCount, userName, destination, filelist
