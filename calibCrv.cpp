@@ -35,31 +35,47 @@
 
 const double CRV_TDC_RATE    = 159.324e6;  // Hz
 const double RATE=(CRV_TDC_RATE/2.0)/1.0e9; // GHZ
+const int BOARD_STATUS_REGISTERS=22;
+const int FPGA_BLOCK_REGISTERS=38;
+const int FPGA_BLOCKS=4;
+
+struct TemperatureCorrections
+{
+  double calibOvervoltageChange{125.5};   //ADC*ns/V
+  double calibTemperatureChangeAFE{-1.46};  //ADC*ns/K  additional calib change due to temperature change in AFE
+  double overvoltageTemperatureChangeCMB{-0.0554};  //V/K
+  double overvoltageTemperatureChangeFEB{0.00409};  //V/K
+  double referenceTemperatureCMB{20.0};   //degC
+  double referenceTemperatureFEB{40.0};   //degC
+};
 
 class CrvEvent
 {
   public:
-  CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree);
+  CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples,
+           const double noiseThreshold, const double minCalibMaxBin, const TemperatureCorrections &temperatureCorrections);
   void     FillPedestalHistograms(int entry);
-  void     CalculatePedestal();
+  void     CalculatePedestal(double pedestalCorrection);
   void     FillCalibrationHistograms(int entry);
   void     CalculateCalibrationConstants(const std::string &pdfFileName, int nPEpeaksToFit);
   void     StorePedestalAndCalibrationConstants(std::ofstream &calibFile);
   void     Summarize(const std::string &pdfFileName);
+  void     StoreHistFile(const std::string &histFileName, const std::string &runNumber);
 
   private:
   CrvEvent();
 
   int _numberOfPreSignalSamples;
-  double _noiseThreshold;
-  double _calibTemperatureIntercept;
-  double _referenceTemperature;
-
   int _numberOfFebs;
   int _channelsPerFeb;
   int _numberOfSamples;
   
   TTree *_tree;
+
+  double _noiseThreshold;
+  double _minCalibMaxBin;
+
+  const TemperatureCorrections _tc;
 
   int     _spillIndex;
   int    *_lastSpillIndex;
@@ -68,12 +84,15 @@ class CrvEvent
   double *_timeSinceSpill;
   short  *_adc;
   float  *_temperature;
+  int    *_boardStatus;
+  int    *_FPGABlocks;
 
   std::vector<TCanvas*> _canvas;
   std::vector<bool>     _draw1PE;
   std::vector<bool>     _draw2PE;
   std::vector<TH1F*>    _pedestalHist;
   std::vector<TGraph*>  _temperatureHist;
+  std::vector<TGraph*>  _temperatureFEBHist;
   std::vector<double>   _pedestals;
   std::vector<bool>     _deadChannels;
   std::vector<bool>     _noPedestal;
@@ -93,42 +112,32 @@ class CrvEvent
   std::vector<calibStruct> _calibVector[2];
 
 };
-CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree) :
-                   _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _tree(tree)
+CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples, 
+                   const double noiseThreshold, const double minCalibMaxBin, const TemperatureCorrections &temperatureCorrections) :
+                   _numberOfPreSignalSamples(preSignalSamples), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), 
+                   _tree(tree), _noiseThreshold(noiseThreshold), _minCalibMaxBin(minCalibMaxBin), _tc(temperatureCorrections)
 {
-  std::ifstream configFile;
-  configFile.open("config.txt");
-  if(!configFile.is_open()) {std::cerr<<"Could not open config.txt."<<std::endl; exit(1);}
-
-  _noiseThreshold=5.0;
-  _calibTemperatureIntercept=-1.0;
-  _referenceTemperature=25.0;
-  std::string configKey, configValue;
-  while(configFile>>configKey>>configValue)
-  {
-    if(configKey=="preSignalSamples") _numberOfPreSignalSamples=atoi(configValue.c_str());
-    if(configKey=="calibNoiseThreshold") _noiseThreshold=atof(configValue.c_str());
-    if(configKey=="calibTemperatureIntercept") _calibTemperatureIntercept=atof(configValue.c_str());
-    if(configKey=="referenceTemperature") _referenceTemperature=atof(configValue.c_str());
-  }
-  if(_calibTemperatureIntercept==-1.0) {std::cerr<<"calibTemperatureIntercept missing in config.txt"<<std::endl; exit(1);}
-
   _lastSpillIndex = new int[_numberOfFebs*_channelsPerFeb];
   _adc            = new short[_numberOfFebs*_channelsPerFeb*_numberOfSamples];
 //  _timeSinceSpill = new double[_numberOfFebs];  //OLD
   _timeSinceSpill = new double[_numberOfFebs*_channelsPerFeb];
   _temperature    = new float[_numberOfFebs*_channelsPerFeb];
+  _boardStatus    = new int[_numberOfFebs*BOARD_STATUS_REGISTERS];
+  _FPGABlocks     = new int[_numberOfFebs*FPGA_BLOCKS*FPGA_BLOCK_REGISTERS];
 
   tree->SetBranchAddress("runtree_spill_index", &_spillIndex);
   tree->SetBranchAddress("runtree_adc", _adc);
   tree->SetBranchAddress("runtree_time_since_spill", _timeSinceSpill);
   tree->SetBranchAddress("runtree_temperature", _temperature);
+  tree->SetBranchAddress("runtree_boardStatus", _boardStatus);
+  tree->SetBranchAddress("runtree_FPGABlocks", _FPGABlocks);
 
   _canvas.resize(_numberOfFebs*_channelsPerFeb);
   _draw1PE.resize(_numberOfFebs*_channelsPerFeb);
   _draw2PE.resize(_numberOfFebs*_channelsPerFeb);
   _pedestalHist.resize(_numberOfFebs*_channelsPerFeb);
   _temperatureHist.resize(_numberOfFebs*_channelsPerFeb);
+  _temperatureFEBHist.resize(_numberOfFebs*_channelsPerFeb);
   _pedestals.resize(_numberOfFebs*_channelsPerFeb);
   _deadChannels.resize(_numberOfFebs*_channelsPerFeb);
   _noPedestal.resize(_numberOfFebs*_channelsPerFeb);
@@ -137,11 +146,14 @@ CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int n
   _calibVector[0].resize(_numberOfFebs*_channelsPerFeb);
   _calibVector[1].resize(_numberOfFebs*_channelsPerFeb);
 
+  if(_tree->GetEntries()>0) _tree->GetEntry(0);
+
   for(int i=0; i<_numberOfFebs; i++)
   {
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
+
       _lastSpillIndex[index]=-1;
       _draw1PE[index]=true;
       _draw2PE[index]=true;
@@ -153,18 +165,29 @@ CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int n
       gPad->SetLogy(0);
       gPad->Divide(1,2);  //1PE and 2PE sample
       _canvas[index]->cd(2);
-      gPad->Divide(2,1);  //temperature and fits
+      gPad->Divide(2,1);  //temperatures and fits
+      gPad->cd(1);
+      gPad->Divide(1,2);  //temperature and FEB temperature
+      _canvas[index]->cd(2);
       gPad->cd(2);
       gPad->SetLogy(0);
       gPad->Divide(1,2);  //calib fit and temperature corrected calib fit
 
-      _pedestalHist[index]=new TH1F(Form("FEB%i Chan%i ped", i, j), Form("FEB%i Chan%i Pedestal; ADC; Counts", i, j), 1000, -50, 50);
+      _pedestalHist[index]=new TH1F(Form("FEB%i Chan%i ped", i, j), Form("FEB%i Chan%i Pedestal; ADC; Counts", i, j), 1001, -50.05, 50.05);
 
       _temperatureHist[index]=new TGraph();
       _temperatureHist[index]->SetMarkerStyle(20);
       _temperatureHist[index]->SetMarkerSize(0.5);
       _temperatureHist[index]->SetMarkerColor(kBlack);
+      _temperatureHist[index]->GetYaxis()->SetLabelSize(0.06);
       _temperatureHist[index]->SetNameTitle(Form("hT_%i",index),Form("Temperature FEB%i Chan%i;Spill;Temperature [deg C]", i, j));
+
+      _temperatureFEBHist[index]=new TGraph();
+      _temperatureFEBHist[index]->SetMarkerStyle(20);
+      _temperatureFEBHist[index]->SetMarkerSize(0.5);
+      _temperatureFEBHist[index]->SetMarkerColor(kBlack);
+      _temperatureFEBHist[index]->GetYaxis()->SetLabelSize(0.06);
+      _temperatureFEBHist[index]->SetNameTitle(Form("hTFEB_%i",index),Form("FEB Temperature FEB%i Chan%i;Spill;Temperature [deg C]", i, j));
 
       _calibVector[0][index]._calibrationHist=new TH1F(Form("FEB%i Chan%i cal0", i, j), Form("FEB%i Chan%i Calibration; Pulse area [ADC*ns]; Counts", i, j), 300, 0, 3000);
       _calibVector[1][index]._calibrationHist=new TH1F(Form("FEB%i Chan%i cal1", i, j), Form("FEB%i Chan%i Temp. corrected calibration; Pulse area [ADC*ns]; Counts", i, j), 300, 0, 3000);
@@ -197,8 +220,7 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
       if(data[0]==0 && data[1]==0 && data[3]==0) continue; //FIXME temporary check for bad events
                                                            //where other channels work, so that timSinceSpill wasn't marked as NAN
 
-      //divide prespill region into three parts
-      //using only 1 region (i.e. don't devide the prespill region) returns a pedestal which is too high
+      //divide prespill region into three parts to remove portions of the waveform that may contain pulses
       int numberOfRegions=3;
       for(int i=0; i<numberOfRegions; i++)
       {
@@ -212,14 +234,20 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
           if(ADC<minADC || isnan(minADC)) minADC=ADC;
           if(ADC>maxADC || isnan(maxADC)) maxADC=ADC;
         }
-        if(maxADC-minADC>5) continue;
         average/=_numberOfPreSignalSamples/numberOfRegions;
-        _pedestalHist[index]->Fill(average);
+        if(maxADC-average>2.5) continue;
+        if(minADC-average<-2.5) continue;
+
+        for(int j=0; j<_numberOfPreSignalSamples/numberOfRegions; j++)
+        {
+          short ADC=data[i*_numberOfPreSignalSamples/numberOfRegions+j];
+          _pedestalHist[index]->Fill(ADC);
+        }
       }
     }
   }
 }
-void CrvEvent::CalculatePedestal()
+void CrvEvent::CalculatePedestal(double pedestalCorrection)
 {
   for(int i=0; i<_numberOfFebs; i++)
   {
@@ -245,6 +273,7 @@ void CrvEvent::CalculatePedestal()
       funcPedestal.DrawClone("SAME");
       _pedestalHist[index]->Fit(&funcPedestal, "QR");
       _pedestals[index] = funcPedestal.GetParameter(1);
+      _pedestals[index]+= pedestalCorrection;
 
       double noiseStdDev=_pedestalHist[index]->GetStdDev();
 
@@ -304,12 +333,12 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
       _nNoiseHits[index]+=peaks.size();
 
       //fit all peaks
-      for(size_t i=0; i<peaks.size(); i++)
+      for(size_t iPeak=0; iPeak<peaks.size(); ++iPeak)
       {
         //select a range of up to 4 points before and after the maximum point
         //-find up to 5 points before and after the maximum point for which the waveform is stricly decreasing
         //-remove 1 point on each side. this removes potentially "bad points" belonging to a second pulse (i.e. in double pulses)
-        int maxBin=peaks[i].first;
+        int maxBin=peaks[iPeak].first;
         int startBin=maxBin;
         int endBin=maxBin;
         for(int bin=maxBin-1; bin>=0 && bin>=maxBin-5; bin--)
@@ -340,7 +369,7 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
         f.SetParameter(0, waveform[maxBin]*TMath::E());
         f.SetParameter(1, maxBin*binWidth);
         f.SetParameter(2, 12.6);
-        if(peaks[i].second) f.SetParameter(1, (maxBin+0.5)*binWidth);
+        if(peaks[iPeak].second) f.SetParameter(1, (maxBin+0.5)*binWidth);
 
         //do the fit
         TFitResultPtr fr = g.Fit(&f,(_draw1PE[index]||_draw2PE[index])?"QS":"NQS");
@@ -354,14 +383,28 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
         double pulseArea = fr->Parameter(0)*fr->Parameter(2);
         _calibVector[0][index]._calibrationHist->Fill(pulseArea);
 
-        //temperature correction of noise pulse areai
-        if(_temperature[index]!=0)
+        //temperature correction of noise pulse area
+        double temperatureFEB=-1000;
+        if(_boardStatus[i*BOARD_STATUS_REGISTERS]!=-1) //i-th FEB was read for this spill
         {
-          pulseArea*=(_calibTemperatureIntercept-_referenceTemperature)/(_calibTemperatureIntercept-_temperature[index]);
-          _calibVector[1][index]._calibrationHist->Fill(pulseArea);
+          //temperature of i-th FEB
+          temperatureFEB=_boardStatus[i*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
         }
 
-        if(_draw1PE[index] && waveform[maxBin]<17)
+        if(_temperature[index]>-300 && temperatureFEB>-300) //temperature of -1000 means no temperature found
+        {
+          //overvoltage difference for actual CMB and FEB temperatures w.r.t. reference CMB and FEB temperatures
+          //deltaOvervoltage = overvoltageTemperatureChangeCMB*(TCMB-TrefCMB) + overvoltageTemperatureChangeFEB*(TFEB-TrefFEB)
+          float deltaOvervoltage = _tc.overvoltageTemperatureChangeCMB*(_temperature[index]-_tc.referenceTemperatureCMB)
+                                 + _tc.overvoltageTemperatureChangeFEB*(temperatureFEB-_tc.referenceTemperatureFEB);
+
+          //calibConst(TCMB,TFEB) = calibConst(TrefCMB,TrefFEB) + calibOvervoltageChange*deltaOvervoltage(TCMB,TFEB) + calibTempChangeAFE*(TFEB-TrefFEB)
+          double pulseAreaAtTrefs = pulseArea - _tc.calibOvervoltageChange*deltaOvervoltage
+                                              - _tc.calibTemperatureChangeAFE*(temperatureFEB-_tc.referenceTemperatureFEB);
+          _calibVector[1][index]._calibrationHist->Fill(pulseAreaAtTrefs);
+        }
+
+        if(_draw1PE[index] && waveform[maxBin]<_noiseThreshold*3.5)
         {
           TVirtualPad *p=gPad;
           gPad->cd(1);
@@ -379,7 +422,7 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
           _draw1PE[index]=false;
           p->cd();
         }
-        if(_draw2PE[index] && waveform[maxBin]>24 && waveform[maxBin]<36)
+        if(_draw2PE[index] && waveform[maxBin]>_noiseThreshold*5.0 && waveform[maxBin]<_noiseThreshold*7.0)
         {
           TVirtualPad *p=gPad;
           gPad->cd(2);
@@ -400,9 +443,11 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
       }//peaks
 
       //fill temperature plot
-      if(_temperature[index]!=0 && _lastSpillIndex[index]!=_spillIndex)
+      if(_temperature[index]>-300 && _lastSpillIndex[index]!=_spillIndex)  //temperature of -1000 means no temperature found
       {
         _temperatureHist[index]->SetPoint(_temperatureHist[index]->GetN(),_spillIndex,_temperature[index]);
+        double temperatureFEB=_boardStatus[i*BOARD_STATUS_REGISTERS+2]*0.01;  //TODO: document seems to indicate a factor of 10.0
+        _temperatureFEBHist[index]->SetPoint(_temperatureFEBHist[index]->GetN(),_spillIndex,temperatureFEB);
         _lastSpillIndex[index]=_spillIndex;
       }
 
@@ -417,12 +462,34 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
+      double avgTemperature=-1000;
+      double avgTemperatureFEB=-1000;
 
       if(_temperatureHist[index]->GetN()>0)
       {
         _canvas[index]->cd(2);
         gPad->cd(1);
+        gPad->cd(1);
         _temperatureHist[index]->Draw("AP");
+        avgTemperature=_temperatureHist[index]->GetMean(2);
+      }
+
+      if(_temperatureFEBHist[index]->GetN()>0)
+      {
+        _canvas[index]->cd(2);
+        gPad->cd(1);
+        gPad->cd(2);
+        _temperatureFEBHist[index]->Draw("AP");
+        avgTemperatureFEB=_temperatureFEBHist[index]->GetMean(2);
+      }
+
+      double minCalibMaxBinAtTref = _minCalibMaxBin;
+      if(avgTemperature>-300 && avgTemperatureFEB>-300) //temperature of -1000 means no temperature found
+      {
+        float deltaOvervoltage = _tc.overvoltageTemperatureChangeCMB*(avgTemperature-_tc.referenceTemperatureCMB)
+                               + _tc.overvoltageTemperatureChangeFEB*(avgTemperatureFEB-_tc.referenceTemperatureFEB);
+        minCalibMaxBinAtTref = _minCalibMaxBin - _tc.calibOvervoltageChange*deltaOvervoltage
+                                               - _tc.calibTemperatureChangeAFE*(avgTemperatureFEB-_tc.referenceTemperatureFEB);
       }
 
       _deadChannels[index]=false;
@@ -468,8 +535,8 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
         double maxbinContent = 0;
         for(int bin=1; bin<CS._calibrationHist->GetNbinsX(); bin++)
         {
-          if(CS._calibrationHist->GetBinCenter(bin)<250) continue;   //find 1PE maximum only between 350 and 1100
-          if(CS._calibrationHist->GetBinCenter(bin)>1500) break;     //1100
+          if(CS._calibrationHist->GetBinCenter(bin)<(k==0?_minCalibMaxBin:minCalibMaxBinAtTref)) continue;   //find 1PE maximum only between 250 and 1500
+          if(CS._calibrationHist->GetBinCenter(bin)>1500) break;     //1500
           double binContent = CS._calibrationHist->GetBinContent(bin);
           if(binContent>maxbinContent)
           {
@@ -524,7 +591,9 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
         if(k==1)
         {
           t2.AddText("Temperature corrected values");
-          t2.AddText(Form("refT %.1f deg C, calibT0 %.1f deg C",_referenceTemperature,_calibTemperatureIntercept));
+          t2.AddText(Form("reference temp %.1f deg C (CMB), %.1f deg C (FEB)",_tc.referenceTemperatureCMB, _tc.referenceTemperatureFEB));
+          t2.AddText(Form("overvoltage %.5f V/K (CMB), %.5f V/K (FEB)",_tc.overvoltageTemperatureChangeCMB, _tc.overvoltageTemperatureChangeFEB));
+          t2.AddText(Form("calib %.1f ADC*ns/V, calibAFE %.2f ADC*ns/K (FEB)", _tc.calibOvervoltageChange, _tc.calibTemperatureChangeAFE));
         }
 
         if(peaks.empty())
@@ -591,11 +660,15 @@ void CrvEvent::StorePedestalAndCalibrationConstants(std::ofstream &calibFile)
 {
   //new format / temperature corrected
   calibFile<<"calib v2  ";
-  calibFile<<"referenceTemperature: "<<_referenceTemperature<<" deg C  calibTemperatureIntercept: "<<_calibTemperatureIntercept<<" deg C"<<std::endl;
-  calibFile<<"  FEB  Channel  Pedestal  Calib     CalibT"<<std::endl;
+  calibFile<<"reference temp: "<<_tc.referenceTemperatureCMB<<" deg C (CMB), "<<_tc.referenceTemperatureFEB<<" deg C (FEB)   ";
+  calibFile<<"overvoltage: "<<_tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<_tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
+  calibFile<<"calib: "<<_tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<_tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)"<<std::endl;
+  calibFile<<"  FEB  Channel  Pedestal  Calib     CalibT   Noise  Xtalk"<<std::endl;
 
-  std::cout<<"referenceTemperature: "<<_referenceTemperature<<" deg C  calibTemperatureIntercept: "<<_calibTemperatureIntercept<<" deg C"<<std::endl;
-  std::cout<<"         FEB  Channel  Pedestal  Calib     CalibT"<<std::endl;
+  std::cout<<"reference temp: "<<_tc.referenceTemperatureCMB<<" deg C (CMB), "<<_tc.referenceTemperatureFEB<<" deg C (FEB)   ";
+  std::cout<<"overvoltage: "<<_tc.overvoltageTemperatureChangeCMB<<" V/K (CMB), "<<_tc.overvoltageTemperatureChangeFEB<<" V/K (FEB)   ";
+  std::cout<<"calib: "<<_tc.calibOvervoltageChange<<" ADC*ns/V, calibAFE: "<<_tc.calibTemperatureChangeAFE<<" ADC*ns/K (FEB)"<<std::endl;
+  std::cout<<"         FEB  Channel  Pedestal  Calib     CalibT    Noise  Xtalk"<<std::endl;
 
   for(int i=0; i<_numberOfFebs; i++)
   {
@@ -606,12 +679,16 @@ void CrvEvent::StorePedestalAndCalibrationConstants(std::ofstream &calibFile)
       calibFile<<std::setw(4)<<i<<"  "<<std::setw(4)<<j<<"     ";
       calibFile<<std::setw(8)<<_pedestals[index]<<"  ";
       calibFile<<std::setw(8)<<_calibVector[0][index]._calibrationConstant<<"  ";
-      calibFile<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<std::endl;
+      calibFile<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<"  ";
+      calibFile<<std::setw(8)<<_calibVector[1][index]._noiseRate/1.0e6<<"  ";
+      calibFile<<std::setw(8)<<_calibVector[1][index]._xtalkProbability<<std::endl;
 
       std::cout<<"FEB/ch "<<std::setw(4)<<i<<"/"<<std::setw(4)<<j<<"     ";
       std::cout<<"pedestal "<<std::setw(8)<<_pedestals[index]<<"  ";
       std::cout<<"calibConst "<<std::setw(8)<<_calibVector[0][index]._calibrationConstant<<"  ";
-      std::cout<<"calibConstT "<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<std::endl;
+      std::cout<<"calibConstT "<<std::setw(8)<<_calibVector[1][index]._calibrationConstant<<"  ";
+      std::cout<<"noise "<<std::setw(8)<<_calibVector[1][index]._noiseRate/1.0e6<<"MHz"<<"  ";
+      std::cout<<"xtalk "<<std::setw(8)<<_calibVector[1][index]._xtalkProbability<<std::endl;
     }
   }
 }
@@ -840,7 +917,27 @@ void CrvEvent::Summarize(const std::string &pdfFileName)
   summaryCanvas2.Print(pdfFileName.c_str(), "pdf");
 }
 
-void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &pdfFileName, int nPEpeaksToFit)
+void CrvEvent::StoreHistFile(const std::string &histFileName, const std::string &runNumber)
+{
+  TFile histFile(histFileName.c_str(), "RECREATE");
+  if(!histFile.IsOpen()) {std::cerr<<"Could not open hist file for run "<<runNumber<<std::endl; exit(1);}
+
+  for(int i=0; i<_numberOfFebs; ++i)
+  {
+    for(int j=0; j<_channelsPerFeb; ++j)
+    {
+      int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
+      _pedestalHist[index]->Write();
+      _calibVector[0][index]._calibrationHist->Write();
+      _calibVector[1][index]._calibrationHist->Write();  //temperature corrected
+    }
+  }
+
+  histFile.Close();
+}
+
+void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &pdfFileName, const std::string &histFileName,
+             int nPEpeaksToFit, int preSignalSamples, double pedestalCorrection, double noiseThreshold, double minCalibMaxBin, const TemperatureCorrections &tc)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -867,26 +964,27 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->SetBranchAddress("spill_number_of_samples", &numberOfSamples);
   treeSpills->GetEntry(0);  //to read the channelsPerFeb and numberOfSamples
 
-  CrvEvent event(numberOfFebs, channelsPerFeb, numberOfSamples, tree);
+  CrvEvent event(numberOfFebs, channelsPerFeb, numberOfSamples, tree, preSignalSamples, noiseThreshold, minCalibMaxBin, tc);
 
   int nEvents = tree->GetEntries();
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
-//if(nEvents>100000) nEvents=100000;   //FIXME
+//if(nEvents>100000) nEvents=2000;   //FIXME
   for(int i=0; i<nEvents; i++) event.FillPedestalHistograms(i);
-  event.CalculatePedestal();
+  event.CalculatePedestal(pedestalCorrection);
   for(int i=0; i<nEvents; i++) event.FillCalibrationHistograms(i);
+
   event.CalculateCalibrationConstants(pdfFileName, nPEpeaksToFit);
   event.StorePedestalAndCalibrationConstants(calibFile);
   event.Summarize(pdfFileName);
+  event.StoreHistFile(histFileName, runNumber);
 
   c0.Print(Form("%s]", pdfFileName.c_str()), "pdf");
 
-  file.Close();
-
   calibFile.close();
+  file.Close();
 }
 
-void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &calibFileName, std::string &pdfFileName)
+void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &calibFileName, std::string &pdfFileName, std::string &histFileName)
 {
   std::ifstream dirFile;
   dirFile.open("config.txt");
@@ -914,6 +1012,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
     inFileName = dirEntry.path().string();
     calibFileName = outDirName+"crv.calib."+dirEntry.path().stem().string().substr(s0.length())+".txt";
     pdfFileName = outDirName+"log.crv.calib."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
+    histFileName = outDirName+"crv.calib."+dirEntry.path().stem().string().substr(s0.length())+".root";
     break;
   }
 
@@ -932,6 +1031,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
       inFileName = dirEntry.path().string();
       calibFileName = outDirName+"cal.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".txt";
       pdfFileName = outDirName+"cal.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
+      histFileName = outDirName+"cal.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".root";
       break;
     }
   }
@@ -947,8 +1047,28 @@ void printHelp()
   std::cout<<"calibCrv RUNNUMBER [OPTIONS]  Calibrates a run."<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Options:"<<std::endl;
-  std::cout<<"-p   number of PE peaks fitted"<<std::endl;
-  std::cout<<"     default: 1"<<std::endl;
+  std::cout<<"-p ###           number of PE peaks fitted"<<std::endl;
+  std::cout<<"                 default: 1"<<std::endl;
+  std::cout<<"-c ###           length of presignal region for the calibration"<<std::endl;
+  std::cout<<"                 default: 60"<<std::endl;
+  std::cout<<"-a ###           correction to the pedestal"<<std::endl;
+  std::cout<<"                 default: -0.13"<<std::endl;
+  std::cout<<"--noiseThreshold ###              peaks below this threshold (above pedestal) are ignored"<<std::endl;
+  std::cout<<"                                  default: 5.0 ADC (use 10.0 ADC for high gain)"<<std::endl;
+  std::cout<<"--minCalibMaxBin ###              minimum bin in calib histogram where the maximum bin for the 1PE peak is searched"<<std::endl;
+  std::cout<<"                                  default: 250.0 ADC*ns (use 500.0 ADC*ns for gain setting 0x000)"<<std::endl;
+  std::cout<<"--calibOvervoltageChange ###      change of calibration constant per overvoltage change"<<std::endl;
+  std::cout<<"                                  default: 125.5 ADC*ns/V (use 412.9 ADC*ns/V for gain setting 0x000)"<<std::endl;
+  std::cout<<"--calibTempChangeAFE ###          additional change of calibration constant due to temperature change in AFE"<<std::endl;
+  std::cout<<"                                  default: -1.46 ADC*ns/K (use -4.80 ADC*ns/K for gain setting 0x000)"<<std::endl;
+  std::cout<<"--overvoltageTempChangeCMB ###    overvoltage change due to temperature change at the CMB"<<std::endl;
+  std::cout<<"                                  default: -0.0554 V/K"<<std::endl;
+  std::cout<<"--overvoltageTempChangeFEB ###    overvoltage change due to temperature change at the FEB"<<std::endl;
+  std::cout<<"                                  default: +0.00409 V/K"<<std::endl;
+  std::cout<<"--referenceTempCMB ###            CMB temperature to which the overvoltage is adjusted to"<<std::endl;
+  std::cout<<"                                  default: 20.0 degC"<<std::endl;
+  std::cout<<"--referenceTempFEB ###            FEB temperature to which the overvoltage is adjusted to"<<std::endl;
+  std::cout<<"                                  default: 40.0 degC"<<std::endl;
   std::cout<<std::endl;
   std::cout<<"Note: There needs to be a file config.txt at the current location,"<<std::endl;
   std::cout<<"which lists the location of the raw files, parsed files, etc."<<std::endl;
@@ -968,15 +1088,32 @@ int main(int argc, char **argv)
   std::string inFileName;
   std::string calibFileName;
   std::string pdfFileName;
-  makeFileNames(runNumber, inFileName, calibFileName, pdfFileName);
+  std::string histFileName;
+  makeFileNames(runNumber, inFileName, calibFileName, pdfFileName, histFileName);
 
-  int nPEpeaksToFit = 1;
+  int    nPEpeaksToFit      =   1;
+  int    preSignalSamples   =  60;
+  double pedestalCorrection =  -0.13;
+  double noiseThreshold     =   5.0;  //ADC  (use 10.0 for high gain)
+  double minCalibMaxBin     = 250.0;  //ADC*ns  (use 500.0 for high gain)
+  TemperatureCorrections tc;  //default values are set in the definition of this struct
   for(int i=2; i<argc-1; i++)
   {
     if(strcmp(argv[i],"-p")==0) nPEpeaksToFit=atoi(argv[i+1]);
+    if(strcmp(argv[i],"-c")==0) preSignalSamples=atoi(argv[i+1]);
+    if(strcmp(argv[i],"-a")==0) pedestalCorrection=atof(argv[i+1]);
+    if(strcmp(argv[i],"--noiseThreshold")==0)            noiseThreshold=atof(argv[i+1]);
+    if(strcmp(argv[i],"--minCalibMaxBin")==0)            minCalibMaxBin=atof(argv[i+1]);
+    if(strcmp(argv[i],"--calibOvervoltageChange")==0)    tc.calibOvervoltageChange=atof(argv[i+1]);
+    if(strcmp(argv[i],"--calibTempChangeAFE")==0)        tc.calibTemperatureChangeAFE=atof(argv[i+1]);
+    if(strcmp(argv[i],"--overvoltageTempChangeCMB")==0)  tc.overvoltageTemperatureChangeCMB=atof(argv[i+1]);
+    if(strcmp(argv[i],"--overvoltageTempChangeFEB")==0)  tc.overvoltageTemperatureChangeFEB=atof(argv[i+1]);
+    if(strcmp(argv[i],"--referenceTempCMB")==0)          tc.referenceTemperatureCMB=atof(argv[i+1]);
+    if(strcmp(argv[i],"--referenceTempFEB")==0)          tc.referenceTemperatureFEB=atof(argv[i+1]);
   }
 
-  process(runNumber, inFileName, calibFileName, pdfFileName, nPEpeaksToFit);
+  process(runNumber, inFileName, calibFileName, pdfFileName, histFileName, nPEpeaksToFit, preSignalSamples, 
+          pedestalCorrection, noiseThreshold, minCalibMaxBin, tc);
 
   return 0;
 }
