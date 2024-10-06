@@ -843,7 +843,7 @@ double LandauGaussFunction(double *x, double *par)
 
     return (par[2] * step * sum * invsq2pi / par[3]);
 }
-void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
+void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2, float &error)
 {
     std::multimap<float,float> bins;  //binContent,binCenter
     for(int i=8; i<=h.GetNbinsX(); i++) bins.emplace(h.GetBinContent(i),h.GetBinCenter(i));  //ordered from smallest to largest bin entries
@@ -885,14 +885,17 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
     TFitResultPtr fr = h.Fit(&fit,"LQRS");
     fit.Draw("same");
 
-    mpv = fit.GetMaximumX();
+    mpv = fit.GetMaximumX();  //fit.GetParameter(1) does not give the correct result, probably because it is not a pure Landau function
     chi2 = (fr->Ndf()>0?fr->Chi2()/fr->Ndf():NAN);
     if(mpv==fitRangeStart) {mpv=0; return;}
     float halfMaximum = fit.Eval(mpv)/2.0;
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = fit.Integral(0,150);
+    signals = fit.Integral(0,150)/h.GetBinWidth(1);  //need to divide by bin width.
+                                                     //if the bin width is 2 and one has e.g. 20 events for 50PEs and 20 events for 51PEs,
+                                                     //the combined bin of x=50/51 gets 40 entries and the integral assumes that there are 40 entries for x=50 and x=51.
+    error = fit.GetParError(1);
 }
 double PoissonFunction(double *x, double *par)
 {
@@ -906,7 +909,7 @@ double PoissonFunction(double *x, double *par)
     const double scaledX=x[0]*par[2];
     return par[0]*TMath::Exp(scaledX * log(par[1]) - TMath::LnGamma(scaledX + 1.) - par[1]);
 }
-void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
+void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2, float &error)
 {
     float maxX=0;
     float maxValue=0;
@@ -936,7 +939,9 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2)
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = fit.Integral(0,150);
+    signals = fit.Integral(0,150)/h.GetBinWidth(1); //explanation see Landau-Gauss
+    error = fit.GetParError(1);
+    if(fit.GetParameter(2)!=0) error/=fit.GetParameter(2);
 }
 
 void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberOfFebs, int *febID, int &nSpillsActual, int *nFebSpillsActual,
@@ -1065,7 +1070,8 @@ void BoardRegisters(TTree *treeSpills, std::ofstream &txtFile, const int numberO
 }
 
 void StorePEyields(const std::string &runNumber, const std::string &txtFileName, const int numberOfFebs, const int channelsPerFeb,
-                   const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2], const std::vector<float> chi2s[2],
+                   const std::vector<float> mpvs[2], const std::vector<float> fwhms[2], const std::vector<float> signals[2],
+                   const std::vector<float> chi2s[2], const std::vector<float> errors[2],
                    const std::vector<float> &meanTemperatures, const std::vector<float> &stddevTemperatures, const std::vector<float> &maxedOutFraction,
                    TTree *treeSpills, int nEventsActual, const Calibration &calib, const TemperatureCorrections &tc)
 {
@@ -1089,6 +1095,8 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   float *signalsTSummary = const_cast<float*>(signals[1].data());
   float *chi2sSummary = const_cast<float*>(chi2s[0].data());
   float *chi2sTSummary = const_cast<float*>(chi2s[1].data());
+  float *errorsSummary = const_cast<float*>(errors[0].data());
+  float *errorsTSummary = const_cast<float*>(errors[1].data());
   float *meanTemperaturesSummary = const_cast<float*>(meanTemperatures.data());
   float *stddevTemperaturesSummary = const_cast<float*>(stddevTemperatures.data());
   float *maxedOutFractionSummary = const_cast<float*>(maxedOutFraction.data());
@@ -1119,6 +1127,8 @@ void StorePEyields(const std::string &runNumber, const std::string &txtFileName,
   recoTreeSummary->Branch("signalsTemperatureCorrected", signalsTSummary, Form("signalsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("chi2s", chi2sSummary, Form("chi2s[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("chi2sTemperatureCorrected", chi2sTSummary, Form("chi2sTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("errors", errorsSummary, Form("errors[%i][%i]/F",numberOfFebs,channelsPerFeb));
+  recoTreeSummary->Branch("errorsTemperatureCorrected", errorsTSummary, Form("errorsTemperatureCorrected[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("meanTemperatures", meanTemperaturesSummary, Form("meanTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("stddevTemperatures", stddevTemperaturesSummary, Form("stddevTemperatures[%i][%i]/F",numberOfFebs,channelsPerFeb));
   recoTreeSummary->Branch("maxedOutFraction", maxedOutFractionSummary, Form("maxedOutFraction[%i][%i]/F",numberOfFebs,channelsPerFeb));
@@ -1453,6 +1463,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   std::vector<float> fwhms[2];
   std::vector<float> signals[2];
   std::vector<float> chi2s[2];
+  std::vector<float> errors[2];
   std::vector<float> meanTemperatures;
   std::vector<float> stddevTemperatures;
   std::vector<float> maxedOutFraction;
@@ -1474,12 +1485,14 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
         float fwhm=0;
         float nsignals=0;
         float chi2=0;
-        if(!usePoisson) LandauGauss(*h[i], mpv, fwhm, nsignals, chi2);
-        else Poisson(*h[i], mpv, fwhm, nsignals, chi2);
+        float error=0;
+        if(!usePoisson) LandauGauss(*h[i], mpv, fwhm, nsignals, chi2, error);
+        else Poisson(*h[i], mpv, fwhm, nsignals, chi2, error);
         mpvs[i].push_back(mpv);
         fwhms[i].push_back(fwhm);
         signals[i].push_back(nsignals);
         chi2s[i].push_back(chi2);
+        errors[i].push_back(error);
         if(!usePoisson) h[i]->GetXaxis()->SetRangeUser(10,150);
         h[i]->Draw();
         TDirectory *tempDirectory = gDirectory;
@@ -1538,7 +1551,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
     }
   }
 
-  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, chi2s, meanTemperatures, stddevTemperatures, maxedOutFraction, treeSpills, nEvents, calib, tc);
+  StorePEyields(runNumber, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, signals, chi2s, errors, meanTemperatures, stddevTemperatures, maxedOutFraction, treeSpills, nEvents, calib, tc);
 
   Summarize(pdfFileName, txtFileName, numberOfFebs, channelsPerFeb, mpvs, fwhms, tc);
 
