@@ -8,6 +8,8 @@
 # include <set>
 # include <experimental/filesystem>
 
+# include "TMap.h"
+# include "TObjString.h"
 # include "TTree.h"
 # include "TFile.h"
 
@@ -31,7 +33,7 @@ class EventTree
 {
   public:
   EventTree(const std::string &runNumber, const std::string &inFileName, const std::string &outFileName,
-            const int channelsPerFeb, const int numberOfSamples);
+            const int channelsPerFeb, const int numberOfSamples, const std::string &configuration);
   ~EventTree();
   void Finish();
   void Clear();
@@ -44,7 +46,7 @@ class EventTree
   std::string    _inFileName, _outFileName;
   std::ifstream  _inFile;
   TFile         *_file;
-  TTree         *_tree, *_treeSpills; 
+  TTree         *_tree, *_treeSpills, *_treeMetaData;
 
   bool   _binary;
 
@@ -79,6 +81,8 @@ class EventTree
   float  *_biasVoltage; //for each channel
   float  *_temperature; //CMB temperature for each channel
 
+  std::string _configuration;
+
   EventTree();
   void PrepareTree();
   bool ParseData(std::vector<unsigned> &buffer, size_t n, bool expectEOL=true, bool hexdec=false);
@@ -90,14 +94,15 @@ class EventTree
 };
 
 EventTree::EventTree(const std::string &runNumber, const std::string &inFileName, const std::string &outFileName,
-                     const int channelsPerFeb, const int numberOfSamples) : 
-                     _runNumber(runNumber), _inFileName(inFileName), _outFileName(outFileName), _binary(false), 
-                     _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _spillIndex(0)
+                     const int channelsPerFeb, const int numberOfSamples, const std::string &configuration) :
+                     _runNumber(runNumber), _inFileName(inFileName), _outFileName(outFileName), _binary(false),
+                     _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), _spillIndex(0), _configuration(configuration)
 {
   _file = new TFile(_outFileName.c_str(), "recreate");
   _tree = new TTree("run","run");
   _treeSpills = new TTree("spills","spills");
-  
+  _treeMetaData = new TTree("metaData","metaData");
+
   _inFile.open(_inFileName.c_str());
   if(!_inFile.good())
   {
@@ -221,12 +226,18 @@ void EventTree::PrepareTree()
   _treeSpills->Branch("spill_timestamp_wday", &_timestampStruct.tm_wday);
   _treeSpills->Branch("spill_timestamp_yday", &_timestampStruct.tm_yday);
   _treeSpills->Branch("spill_timestamp_isdst", &_timestampStruct.tm_isdst);
+
+  _treeMetaData->Branch("runNumber", &_run, "runNumber/I");
+  _treeMetaData->Branch("subrunNumber", &_subrun, "subrunNumber/I");
+  _treeMetaData->Branch("configuration", &_configuration);
+  _treeMetaData->Fill();  //only one entry per file
 }
 
 void EventTree::Finish()
 {
   _tree->Write("", TObject::kOverwrite);
   _treeSpills->Write("", TObject::kOverwrite);
+  _treeMetaData->Write("", TObject::kOverwrite);
   _file->Close();
   _inFile.close();
 }
@@ -250,7 +261,7 @@ bool EventTree::ParseData(std::vector<unsigned> &buffer, size_t n, bool expectEO
   {
     size_t additionalBytes=0;
     if(expectEOL) additionalBytes=3*n/16;    //3 additional bytes for line breaks every 16 bytes
-    if(n<16 && expectEOL) additionalBytes=3; //3 additional bytes for line break at event header 
+    if(n<16 && expectEOL) additionalBytes=3; //3 additional bytes for line break at event header
                                              //(which is only 14 bytes due to the additional "8 8" at the beginning)
     unsigned char binaryLine[n+additionalBytes];
     _inFile.read(reinterpret_cast<char*>(binaryLine),n+additionalBytes);
@@ -259,7 +270,7 @@ bool EventTree::ParseData(std::vector<unsigned> &buffer, size_t n, bool expectEO
       _inFile.clear();
       return false;
     }
-    for(size_t i=0, iBuffer=0; i<n+additionalBytes && iBuffer<buffer.size(); i++, iBuffer++) 
+    for(size_t i=0, iBuffer=0; i<n+additionalBytes && iBuffer<buffer.size(); i++, iBuffer++)
     {
       buffer[iBuffer]=binaryLine[i];
       if(expectEOL && iBuffer%16==15) i+=3;
@@ -358,13 +369,13 @@ if(theEvent._badEvent) std::cout<<"bad Event at FEB "<<feb<<" ch "<<channel<<std
     if(adcSample>2048) adcSample-=4096;
     adcSamples.push_back(adcSample);
 //std::cout<<"ADCsample "<<i<<"  "<<adcSample<<std::endl;
-  } 
+  }
 
   if(checkMissingBytes && buffer.at(dataSize*2-2)==8 && buffer.at(dataSize*2-1)==8)   //at last channel of an FPGA
   {
 std::cout<<"missingBytes FEB/ch "<<feb<<"  "<<channel<<std::endl;
     theEvent._badEvent=true;  //this event is bad, but the next events can still be read
-    missingBytes=true;        //this event is short by two bytes. 
+    missingBytes=true;        //this event is short by two bytes.
                               //the last two bytes which were read (" 8 8 "), are actually the first two bytes
                               //of the event header of the next event.
                               //therefore, when the next event header is read, the first two bytes need to be skipped,
@@ -468,7 +479,7 @@ void EventTree::ReadSpill()
         std::cout<<"Found time stamp "<<timestampString<<std::endl;
       }
     }
-  
+
     if(line.find("timestamp")!=std::string::npos)
     {
       if(feb!=-1) //haven't started a new spill, yet
@@ -483,7 +494,7 @@ void EventTree::ReadSpill()
         std::cout<<"Found time stamp "<<timestampString<<std::endl;
       }
     }
-  
+
     if(line.find("--Begin of spill")>1) continue;  //not at the spill, yet (at 0: text file, at 1: binary file)
     if(line.at(0)==18) _binary=true;
 
@@ -575,14 +586,14 @@ void EventTree::ReadSpill()
       {
 //std::cout<<"Couldn't read event header. Usually at end of spill for current FEB. Also happens for corrupted events. Moving to the next FEB."<<std::endl;
         break;
-        //couldn't read the event header. 
+        //couldn't read the event header.
         //-probably end of spill for the current FEB.
         //-could also be a corrupted event (but not due to missing bytes)
         //leaving the loop and go to the next FEB.
       }
 
       missingBytes=false;
-      Event &theEvent = _spill[eventNumber]; 
+      Event &theEvent = _spill[eventNumber];
 
       for(int channelInFpga=0; channelInFpga<CHANNEL_PER_FPGA; channelInFpga++)
       {
@@ -592,8 +603,8 @@ void EventTree::ReadSpill()
         {
           std::cout<<"Event "<<eventNumber<<" at FEB "<<feb<<" cannot be read. ";
           std::cout<<"Skipping event. May not be able to recover this spill."<<std::endl;
-          break; //It couldn't be parsed due to non-numerical data. 
-                 //Won't be able to parse the next event header either, 
+          break; //It couldn't be parsed due to non-numerical data.
+                 //Won't be able to parse the next event header either,
                  //since the ifstream >> operator won't get past the non-numerical data.
                  //Therefore leaving the while loop completely, and go to the next FEB
         }
@@ -605,7 +616,7 @@ void EventTree::ReadSpill()
             std::cout<<"Skipping event."<<std::endl;
             break;
           }
-          else if(theEvent._badEvent && checkMissingBytes) //It checked for the "missing bytes situation" at the end of the 16 channels 
+          else if(theEvent._badEvent && checkMissingBytes) //It checked for the "missing bytes situation" at the end of the 16 channels
                                                            //(by searching for the " 8 8 " string), but there were no missing bytes
                                                            //(it would have gone into the missingBytes branch above).
                                                            //So the bad event flag must have been caused by something else.
@@ -655,9 +666,9 @@ void EventTree::FillSpill()
       for(int channel=0; channel<16*_nFPGAs; channel++)
 //      for(int channel=0; channel<_channelsPerFeb; channel++)
       {
-        if(theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel))==theEvent._tdcSinceSpill.end()) 
+        if(theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel))==theEvent._tdcSinceSpill.end())
         {
-          theEvent._badEvent=true; 
+          theEvent._badEvent=true;
           ++eventsWithMissingChannels[feb];
           break;  //to avoid double counting this event
         }
@@ -703,7 +714,7 @@ void EventTree::FillSpill()
       {
         int indexTDC=feb*_channelsPerFeb+channel;
         std::map<std::pair<int,int>, long>::const_iterator iterTDC=theEvent._tdcSinceSpill.find(std::pair<int,int>(feb,channel));
-        if(iterTDC!=theEvent._tdcSinceSpill.end()) 
+        if(iterTDC!=theEvent._tdcSinceSpill.end())
         {
           _tdcSinceSpill[indexTDC]=iterTDC->second; //_tdcSinceSpill[feb][channel];
           _timeSinceSpill[indexTDC]=iterTDC->second / (CRV_TDC_RATE/1e9); //_timeSinceSpill[feb][channel];
@@ -739,7 +750,7 @@ void EventTree::FillSpill()
   std::cout<<"Found "<<_nEventsActual<<" good events out of "<<_nEvents<<" total events in spill "<<_spillNumber<<"."<<std::endl;
 }
 
-void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &outFileName)
+void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &outFileName, std::string &configuration)
 {
   std::ifstream dirFile;
   dirFile.open("config.txt");
@@ -755,7 +766,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
   dirFile.close();
 
   bool found=false;
-  for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName)) 
+  for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName))
   {
     const std::string s = dirEntry.path().filename().string();
     const std::string s0 = "crv.raw.";
@@ -766,13 +777,19 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
     found=true;
     inFileName = dirEntry.path().string();
     outFileName = outDirName+"crv.parsed."+dirEntry.path().stem().string().substr(s0.length())+".root";
+
+    //4th field of file name
+    std::stringstream ss(s);
+    std::string field;
+    for(int i=0; i<4 && getline(ss,field,','); ++i) {if(i==3) configuration=field;}
+
     break;
   }
 
   if(!found)
   {
 //try Ray's version of file names
-    for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName)) 
+    for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName))
     {
       const std::string s = dirEntry.path().filename().string();
       const std::string s0 = "raw.mu2e.";
@@ -783,6 +800,12 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
       found=true;
       inFileName = dirEntry.path().string();
       outFileName = outDirName+"ntd.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".root";
+
+      //4th field of file name
+      std::stringstream ss(s);
+      std::string field;
+      for(int i=0; i<4 && getline(ss,field,'.'); ++i) {if(i==3) configuration=field;}
+
       break;
     }
   }
@@ -817,7 +840,8 @@ int main(int argc, char **argv)
   std::string runNumber=argv[1];
   std::string inFileName;
   std::string outFileName;
-  makeFileNames(runNumber, inFileName, outFileName);
+  std::string configuration;
+  makeFileNames(runNumber, inFileName, outFileName, configuration);
 
   int nChannels=64;
   int nSamples=127;
@@ -828,7 +852,7 @@ int main(int argc, char **argv)
     if(strcmp(argv[i],"-s")==0) nSamples=atoi(argv[i+1]);
   }
 
-  EventTree eventTree(runNumber, inFileName, outFileName, nChannels, nSamples);
+  EventTree eventTree(runNumber, inFileName, outFileName, nChannels, nSamples, configuration);
 
   while(1)
   {

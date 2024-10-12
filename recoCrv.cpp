@@ -1417,8 +1417,103 @@ void Summarize(const std::string &pdfFileName, const std::string &txtFileName, c
   std::cout<<"Mean far side    "<<std::setw(8)<<meanFar[0]<<"  "<<std::setw(8)<<meanFar[1]<<std::endl;
 }
 
+void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *recoTree, TTree *recoTreeSpill, TTree *recoTreeSummary)
+{
+  int         run;
+  int         subrun;
+  std::string *configuration = new std::string;
+  treeMetaData->SetBranchAddress("runNumber", &run);
+  treeMetaData->SetBranchAddress("subrunNumber", &subrun);
+  treeMetaData->SetBranchAddress("configuration", &configuration);
+  treeMetaData->GetEntry(0); //only one entry per file
+
+  int       nEventsExpected;
+  int       nEventsActual;
+  Long64_t  timestampTmp=0;  //time_t
+  recoTreeSpill->SetBranchAddress("spill_nevents", &nEventsExpected);
+  recoTreeSpill->SetBranchAddress("spill_neventsActual", &nEventsActual);
+  recoTreeSpill->SetBranchAddress("spill_timestamp", &timestampTmp);
+
+  long totalEventsExpected=0;
+  long totalEventsActual=0;
+  Long64_t firstTimestamp=0;
+  Long64_t lastTimestamp=0;
+  for(int i=0; i<recoTreeSpill->GetEntries(); ++i)
+  {
+    recoTreeSpill->GetEntry(i);
+    if(firstTimestamp==0) firstTimestamp=timestampTmp;  //the first spill may not have a time stamp
+    if(timestampTmp!=0) lastTimestamp=timestampTmp;  //the last spill may not have a time stamp
+
+    totalEventsExpected+=nEventsExpected;
+    totalEventsActual+=nEventsActual;
+  }
+
+  TFile dqmFile(dqmFileName.c_str(), "RECREATE");
+
+  //meta data in dqm file
+  TTree dqmTreeMetaData("metaData","metaData");
+  dqmTreeMetaData.Branch("runNumber", &run, "runNumber/I");
+  dqmTreeMetaData.Branch("subrunNumber", &subrun, "subrunNumber/I");
+  dqmTreeMetaData.Branch("configuration", configuration);
+  dqmTreeMetaData.Branch("firstSpillTime", &firstTimestamp);
+  dqmTreeMetaData.Branch("lastSpillTime", &lastTimestamp);
+  dqmTreeMetaData.Branch("eventsExpected", &totalEventsExpected);
+  dqmTreeMetaData.Branch("eventsActual", &totalEventsActual);
+  dqmTreeMetaData.Fill();
+  dqmTreeMetaData.Write();
+
+  TH1F *hdqmPEs = new TH1F("PEs","PEs;PE yield [PEs];count",150,0,150);
+  TH1F *hdqmPEsTemperatureCorrected = new TH1F("PEsTemperatureCorrected","PEsTemperatureCorrected;PE yield [PEs];count",150,0,150);
+  TH1F *hdqmTime = new TH1F("time","time;time [ns];count",100,700,1700);
+  TH1F *hdqmMpvPEs = new TH1F("mpvPEs","mpvPEs;PE yield [PEs];count",150,0,150);
+  TH1F *hdqmMpvPEsTemperatureCorrected = new TH1F("mpvPEsTemperatureCorrected","mpvPEsTemperatureCorrected;PE yield [PEs];count",150,0,150);
+  TH1F *hdqmPedestals = new TH1F("pedestals","pedestals;pedestal [ADC];count",100,-50,50);
+  TH1F *hdqmCalibConstants = new TH1F("calibConstants","calibConstants;calib const [ADC*ns/PEs];count",100,200,700);
+  TH1F *hdqmCalibConstantsTemperatureCorrected = new TH1F("calibConstantsTemperatureCorrected","calibConstantsTemperatureCorrected;calib const [ADC*ns/PEs];count",100,200,700);
+  TH1F *hdqmMaxedOutFraction = new TH1F("maxedOutFraction","maxedOutFraction;fraction;count",100,0,0.01);
+  TH1F *hdqmNoiseRate = new TH1F("noiseRate","noiseRate;rate [MHz];count",100,0,0.4);
+  TH1F *hdqmXtalkProbability = new TH1F("xtalkProbability","xtalkProbability;probability;count",100,0,0.2);
+  TH1F *hdqmMeanTemperatures = new TH1F("meanTemperatures","meanTemperatures;temp [deg C];count",40,0,40);
+  TH1F *hdqmFebTemperaturesAvg = new TH1F("febTemperaturesAvg","febTemperaturesAvg;temp [deg C];count",60,10,70);
+  TH1F *hdqmBiasVoltagesAvg = new TH1F("biasVoltagesAvg","biasVoltagesAvg;bias [V];count",100,50,60);
+  TH1F *hdqmFebID = new TH1F("febID","febID;febID;count",100,0,100);
+  recoTree->Draw("PEs>>+PEs");
+  recoTree->Draw("PEsTemperatureCorrected>>+PEsTemperatureCorrected");
+  recoTree->Draw("time>>+time");
+  recoTreeSummary->Draw("PEs>>+mpvPEs");
+  recoTreeSummary->Draw("PEsTemperatureCorrected>>+mpvPEsTemperatureCorrected");
+  recoTreeSummary->Draw("pedestals>>+pedestals");
+  recoTreeSummary->Draw("calibConstants>>+calibConstants");
+  recoTreeSummary->Draw("calibConstantsTemperatureCorrected>>+calibConstantsTemperatureCorrected");
+  recoTreeSummary->Draw("maxedOutFraction>>+maxedOutFraction");
+  recoTreeSummary->Draw("noiseRate>>+noiseRate");
+  recoTreeSummary->Draw("xtalkProbability>>+xtalkProbability");
+  recoTreeSummary->Draw("meanTemperatures>>+meanTemperatures");
+  recoTreeSummary->Draw("febTemperaturesAvg>>+febTemperaturesAvg");
+  recoTreeSummary->Draw("biasVoltagesAvg>>+biasVoltagesAvg");
+  recoTreeSummary->Draw("febID>>+febID");
+  hdqmPEs->Write();
+  hdqmPEsTemperatureCorrected->Write();
+  hdqmTime->Write();
+  hdqmMpvPEs->Write();
+  hdqmMpvPEsTemperatureCorrected->Write();
+  hdqmPedestals->Write();
+  hdqmCalibConstants->Write();
+  hdqmCalibConstantsTemperatureCorrected->Write();
+  hdqmMaxedOutFraction->Write();
+  hdqmNoiseRate->Write();
+  hdqmXtalkProbability->Write();
+  hdqmMeanTemperatures->Write();
+  hdqmFebTemperaturesAvg->Write();
+  hdqmBiasVoltagesAvg->Write();
+  hdqmFebID->Write();
+
+  dqmFile.Close();
+}
+
 void process(const std::string &runNumber, const std::string &inFileName, const std::string &calibFileName, const std::string &recoFileName, const std::string &recoFileName2,
-             const std::string &pdfFileName, const std::string &txtFileName, bool usePoisson, const TemperatureCorrections &tc, const std::string &channelMapFile, float PEcut)
+             const std::string &pdfFileName, const std::string &txtFileName, const std::string &dqmFileName,
+             bool usePoisson, const TemperatureCorrections &tc, const std::string &channelMapFile, float PEcut)
 {
   TFile file(inFileName.c_str(), "READ");
   if(!file.IsOpen()) {std::cerr<<"Could not read CRV file for run "<<runNumber<<std::endl; exit(1);}
@@ -1585,12 +1680,16 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
     delete hist;
   }
 
+  //meta data
+  TTree *treeMetaData = (TTree*)file.Get("metaData");
+  fillDqmFile(dqmFileName, treeMetaData, recoTree, recoTreeSpill, recoTreeSummary);
+
   recoFile.Close();
   recoFile2.Close();
   file.Close();
 }
 
-void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &calibFileName, std::string &recoFileName, std::string &recoFileName2, std::string &pdfFileName, std::string &txtFileName)
+void makeFileNames(const std::string &runNumber, std::string &inFileName, std::string &calibFileName, std::string &recoFileName, std::string &recoFileName2, std::string &pdfFileName, std::string &txtFileName, std::string &dqmFileName)
 {
   std::ifstream dirFile;
   dirFile.open("config.txt");
@@ -1622,6 +1721,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
     recoFileName2 = recoDirName+"crv.reco2."+dirEntry.path().stem().string().substr(s0.length())+".root";
     pdfFileName = recoDirName+"log.crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
     txtFileName = recoDirName+"log.crv.reco."+dirEntry.path().stem().string().substr(s0.length())+".txt";
+    dqmFileName = recoDirName+"crv.dqm."+dirEntry.path().stem().string().substr(s0.length())+".root";
     break;
   }
 
@@ -1643,6 +1743,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
       recoFileName2 = recoDirName+"rec2.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".root";
       pdfFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".pdf";
       txtFileName = recoDirName+"rec.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".txt";
+      dqmFileName = recoDirName+"dqm.mu2e."+dirEntry.path().stem().string().substr(s0.length())+".root";
       break;
     }
   }
@@ -1717,9 +1818,10 @@ int main(int argc, char **argv)
   std::string recoFileName2;
   std::string pdfFileName;
   std::string txtFileName;
-  makeFileNames(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName);
+  std::string dqmFileName;
+  makeFileNames(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, dqmFileName);
 
-  process(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, usePoisson, tc, channelMapFile, PEcut);
+  process(runNumber, inFileName, calibFileName, recoFileName, recoFileName2, pdfFileName, txtFileName, dqmFileName, usePoisson, tc, channelMapFile, PEcut);
 
   return 0;
 }
