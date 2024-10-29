@@ -415,6 +415,7 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
     if(configKey=="signalRegionStart") _signalRegionStart=atoi(configValue.c_str());
     if(configKey=="signalRegionEnd")   _signalRegionEnd=atoi(configValue.c_str());
   }
+  configFile.close();
 
   _lastSpillIndex = new int[_numberOfFebs*_channelsPerFeb];
 //  _tdcSinceSpill  = new int[_numberOfFebs];  //OLD
@@ -1448,6 +1449,19 @@ void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *rec
     totalEventsActual+=nEventsActual;
   }
 
+  //dqm data in config file
+  std::ifstream configFile;
+  configFile.open("config.txt");
+  if(!configFile.is_open()) {std::cerr<<"Could not open config.txt."<<std::endl; exit(1);}
+
+  std::map<std::string,float> metaDataValues;
+  std::string configKey, configValue;
+  while(configFile>>configKey>>configValue)
+  {
+    if(configKey.compare(0,12,"metaData:crv")==0) metaDataValues[configKey.substr(9)]=atof(configValue.c_str());
+  }
+  configFile.close();
+
   TFile dqmFile(dqmFileName.c_str(), "RECREATE");
 
   //meta data in dqm file
@@ -1459,8 +1473,10 @@ void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *rec
   dqmTreeMetaData.Branch("lastSpillTime", &lastTimestamp);
   dqmTreeMetaData.Branch("eventsExpected", &totalEventsExpected);
   dqmTreeMetaData.Branch("eventsActual", &totalEventsActual);
-  dqmTreeMetaData.Fill();
-  dqmTreeMetaData.Write();
+  for(auto i=metaDataValues.begin(); i!=metaDataValues.end(); ++i)
+  {
+    dqmTreeMetaData.Branch(i->first.c_str(), &i->second);
+  }
 
   TH1F *hdqmPEs = new TH1F("PEs","PEs;PE yield [PEs];count",150,0,150);
   TH1F *hdqmPEsTemperatureCorrected = new TH1F("PEsTemperatureCorrected","PEsTemperatureCorrected;PE yield [PEs];count",150,0,150);
@@ -1480,6 +1496,12 @@ void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *rec
   recoTree->Draw("PEs>>+PEs");
   recoTree->Draw("PEsTemperatureCorrected>>+PEsTemperatureCorrected");
   recoTree->Draw("time>>+time");
+
+  //fit time peak
+  int maxBin=hdqmTime->GetMaximumBin();
+  float maxTime=hdqmTime->GetBinCenter(maxBin);
+  hdqmTime->Fit("gaus","S","",maxTime-100.0,maxTime+100.0);
+
   recoTreeSummary->Draw("PEs>>+mpvPEs");
   recoTreeSummary->Draw("PEsTemperatureCorrected>>+mpvPEsTemperatureCorrected");
   recoTreeSummary->Draw("pedestals>>+pedestals");
@@ -1507,6 +1529,9 @@ void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *rec
   hdqmFebTemperaturesAvg->Write();
   hdqmBiasVoltagesAvg->Write();
   hdqmFebID->Write();
+
+  dqmTreeMetaData.Fill();
+  dqmTreeMetaData.Write();
 
   dqmFile.Close();
 }
