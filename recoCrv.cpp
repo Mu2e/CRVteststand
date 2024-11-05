@@ -1454,11 +1454,13 @@ void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *rec
   configFile.open("config.txt");
   if(!configFile.is_open()) {std::cerr<<"Could not open config.txt."<<std::endl; exit(1);}
 
-  std::map<std::string,float> metaDataValues;
+  std::map<std::string,float> metaDataFValues;
+  std::map<std::string,int> metaDataIValues;
   std::string configKey, configValue;
   while(configFile>>configKey>>configValue)
   {
-    if(configKey.compare(0,12,"metaData:crv")==0) metaDataValues[configKey.substr(9)]=atof(configValue.c_str());
+    if(configKey.compare(0,9,"metaDataF")==0) metaDataFValues[configKey.substr(10)]=atof(configValue.c_str());
+    if(configKey.compare(0,9,"metaDataI")==0) metaDataIValues[configKey.substr(10)]=atoi(configValue.c_str());
   }
   configFile.close();
 
@@ -1466,14 +1468,18 @@ void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *rec
 
   //meta data in dqm file
   TTree dqmTreeMetaData("metaData","metaData");
-  dqmTreeMetaData.Branch("runNumber", &run, "runNumber/I");
-  dqmTreeMetaData.Branch("subrunNumber", &subrun, "subrunNumber/I");
+  dqmTreeMetaData.Branch("runNumber", &run);
+  dqmTreeMetaData.Branch("subrunNumber", &subrun);
   dqmTreeMetaData.Branch("configuration", configuration);
   dqmTreeMetaData.Branch("firstSpillTime", &firstTimestamp);
   dqmTreeMetaData.Branch("lastSpillTime", &lastTimestamp);
   dqmTreeMetaData.Branch("eventsExpected", &totalEventsExpected);
   dqmTreeMetaData.Branch("eventsActual", &totalEventsActual);
-  for(auto i=metaDataValues.begin(); i!=metaDataValues.end(); ++i)
+  for(auto i=metaDataFValues.begin(); i!=metaDataFValues.end(); ++i)
+  {
+    dqmTreeMetaData.Branch(i->first.c_str(), &i->second);
+  }
+  for(auto i=metaDataIValues.begin(); i!=metaDataIValues.end(); ++i)
   {
     dqmTreeMetaData.Branch(i->first.c_str(), &i->second);
   }
@@ -1492,7 +1498,7 @@ void fillDqmFile(const std::string &dqmFileName, TTree *treeMetaData, TTree *rec
   TH1F *hdqmMeanTemperatures = new TH1F("meanTemperatures","meanTemperatures;temp [deg C];count",40,0,40);
   TH1F *hdqmFebTemperaturesAvg = new TH1F("febTemperaturesAvg","febTemperaturesAvg;temp [deg C];count",60,10,70);
   TH1F *hdqmBiasVoltagesAvg = new TH1F("biasVoltagesAvg","biasVoltagesAvg;bias [V];count",100,50,60);
-  TH1F *hdqmFebID = new TH1F("febID","febID;febID;count",100,0,100);
+  TH1I *hdqmFebID = new TH1I("febID","febID;febID;count",100,0,100);
   recoTree->Draw("PEs>>+PEs");
   recoTree->Draw("PEsTemperatureCorrected>>+PEsTemperatureCorrected");
   recoTree->Draw("time>>+time");
