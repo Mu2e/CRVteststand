@@ -13,10 +13,10 @@
 class CrvCounter : public TWbox
 {
   public:
-  CrvCounter(int side, int sector, int feb, int channel1, int channel2, TText *textPEs,
+  CrvCounter(int side, int sector, int ignoreForFit, int feb, int channel1, int channel2, TText *textPEs,
              TPad *padAdc, TPad *padReco1, TPad *padReco2, double x, double y, double xDisplay, double yDisplay) :
              TWbox(xDisplay-25.65, yDisplay-9.9, xDisplay+25.65, yDisplay+9.9, 0,(feb>=0?3:1),1),
-             _side(side), _sector(sector), _feb(feb), _channel1(channel1), _channel2(channel2), _PE1(0), _PE2(0),
+             _side(side), _sector(sector), _ignoreForFit(ignoreForFit), _feb(feb), _channel1(channel1), _channel2(channel2), _PE1(0), _PE2(0),
              _x(x), _y(y), _textPEs(textPEs), _padAdc(padAdc)
   {
     _padReco[0]=padReco1;
@@ -35,6 +35,10 @@ class CrvCounter : public TWbox
   int GetSector()
   {
     return _sector;
+  }
+  int IgnoreForFit()
+  {
+    return _ignoreForFit;
   }
   virtual void ExecuteEvent(Int_t event, Int_t px, Int_t py)
   {
@@ -211,6 +215,7 @@ class CrvCounter : public TWbox
   private:
   int _side;
   int _sector;
+  int _ignoreForFit;
   int _feb;
   int _channel1, _channel2;
   int _PE1, _PE2;
@@ -278,8 +283,9 @@ class EventWindow : public TGMainFrame
     int _side;
     int _sector;
     float _x,_y;
-    channelStruct() : _side(0), _sector(0), _x(0), _y(0) {}
-    channelStruct(int side, int sector, float x, float y) : _side(side), _sector(sector), _x(x), _y(y) {}
+    int _ignoreForFit;  //for the fit using all sectors
+    channelStruct() : _side(0), _sector(0), _x(0), _y(0), _ignoreForFit(0) {}
+    channelStruct(int side, int sector, float x, float y, int ignoreForFit) : _side(side), _sector(sector), _x(x), _y(y), _ignoreForFit(ignoreForFit) {}
   };
 
   std::string                                                  _channelMapFileName;
@@ -349,31 +355,59 @@ void EventWindow::ReadChannelMap()
   getline(file,header);
   bool hasSectors=false;
   if(header.find("sector")!=string::npos) hasSectors=true;
+  bool hasIgnoreForFit=false;
+  if(header.find("ignoreForFit")!=string::npos) hasIgnoreForFit=true;
 
   int febA, channelA1, channelA2;
   int febB, channelB1, channelB2;
   float x, y;
   int sector=0;
+  int ignoreForFit=0;
 
   while(file >> febA >> channelA1 >> channelA2 >> febB >> channelB1 >> channelB2 >> x >> y)
   {
     if(hasSectors) file >> sector;
+    if(hasIgnoreForFit) file >> ignoreForFit;
     std::pair<int,int> channelPairA(channelA1,channelA2);
     std::pair<int,int> channelPairB(channelB1,channelB2);
     std::pair<int,std::pair<int,int> > counterA(febA,channelPairA);
     std::pair<int,std::pair<int,int> > counterB(febB,channelPairB);
 
-    _channelMap[counterA]=channelStruct(0,sector,x,y);
-    _channelMap[counterB]=channelStruct(1,sector,x,y);
+    _channelMap[counterA]=channelStruct(0,sector,x,y,ignoreForFit);
+    _channelMap[counterB]=channelStruct(1,sector,x,y,ignoreForFit);
 
-    if(_minX.find(0)==_minX.end())
+    //corners of display
+    if(_minX.find(-1)==_minX.end())
     {
-      _minX[0]=x;
-      _maxX[0]=x;
-      _minY[0]=y;
-      _maxY[0]=y;
+      _minX[-1]=x;
+      _maxX[-1]=x;
+      _minY[-1]=y;
+      _maxY[-1]=y;
     }
 
+    if(x<_minX[-1]) _minX[-1]=x;
+    if(x>_maxX[-1]) _maxX[-1]=x;
+    if(y<_minY[-1]) _minY[-1]=y;
+    if(y>_maxY[-1]) _maxY[-1]=y;
+
+    //area of fit through all modules
+    if(ignoreForFit==0)
+    {
+      if(_minX.find(0)==_minX.end())
+      {
+        _minX[0]=x;
+        _maxX[0]=x;
+        _minY[0]=y;
+        _maxY[0]=y;
+      }
+
+      if(x<_minX[0]) _minX[0]=x;
+      if(x>_maxX[0]) _maxX[0]=x;
+      if(y<_minY[0]) _minY[0]=y;
+      if(y>_maxY[0]) _maxY[0]=y;
+    }
+
+    //area of fit through individual sectors
     if(_minX.find(sector)==_minX.end())
     {
       _minX[sector]=x;
@@ -381,11 +415,6 @@ void EventWindow::ReadChannelMap()
       _minY[sector]=y;
       _maxY[sector]=y;
     }
-
-    if(x<_minX[0]) _minX[0]=x;
-    if(x>_maxX[0]) _maxX[0]=x;
-    if(y<_minY[0]) _minY[0]=y;
-    if(y>_maxY[0]) _maxY[0]=y;
 
     if(x<_minX[sector]) _minX[sector]=x;
     if(x>_maxX[sector]) _maxX[sector]=x;
@@ -476,12 +505,16 @@ bool EventWindow::DoEvent()
       {
         float x,y;
         counter->GetPos(x,y);
-        sumX[0] +=x*PE;
-        sumY[0] +=y*PE;
-        sumXY[0]+=x*y*PE;
-        sumYY[0]+=y*y*PE;
-        sumPEs[0]+=PE;
-        ++nPoints[0];
+
+        if(counter->IgnoreForFit()==0)
+        {
+          sumX[0] +=x*PE;
+          sumY[0] +=y*PE;
+          sumXY[0]+=x*y*PE;
+          sumYY[0]+=y*y*PE;
+          sumPEs[0]+=PE;
+          ++nPoints[0];
+        }
 
         int sector=counter->GetSector();
         if(sector!=0)
@@ -549,8 +582,8 @@ bool EventWindow::DoEvent()
       {
         float slope=(sumPEs[sector]*sumXY[sector]-sumX[sector]*sumY[sector])/(sumPEs[sector]*sumYY[sector]-sumY[sector]*sumY[sector]);
         float intercept=(sumX[sector]-slope*sumY[sector])/sumPEs[sector];
-        float x1=intercept+slope*(_minY[sector]-20);
-        float x2=intercept+slope*(_maxY[sector]+20);
+        float x1=intercept+slope*(_minY[sector]-(sector==0?40:20));
+        float x2=intercept+slope*(_maxY[sector]+(sector==0?40:20));
         for(int side=0; side<2; ++side)
         {
           if(side==1)
@@ -559,7 +592,7 @@ bool EventWindow::DoEvent()
             x2=_centerX+(_centerX-x2);
           }
           _pads[side]->cd();
-          _fit[side][sector] = new TLine(x1,_minY[sector]-20,x2,_maxY[sector]+20);
+          _fit[side][sector] = new TLine(x1,_minY[sector]-(sector==0?40:20),x2,_maxY[sector]+(sector==0?40:20));
           _fit[side][sector]->SetLineColor(sector==0?3:6);
           _fit[side][sector]->SetLineWidth(3);
           _fit[side][sector]->Draw();
@@ -609,8 +642,8 @@ void EventWindow::DrawFront(int side)
   _pads[side]->cd();
 
   TGraph *g = new TGraph();
-  g->SetPoint(0,_minX[0]-20,_minY[0]-20);
-  g->SetPoint(1,_maxX[0]+20,_maxY[0]+20);
+  g->SetPoint(0,_minX[-1]-20,_minY[-1]-20);
+  g->SetPoint(1,_maxX[-1]+20,_maxY[-1]+20);
   g->GetXaxis()->SetTitle("x [mm]");
   g->GetYaxis()->SetTitle("y [mm]");
   g->Draw(side==0?"A P":"A P RX");
@@ -640,6 +673,7 @@ void EventWindow::DrawFront(int side)
   {
     if(channelIter->second._side!=side) continue; //drawing the other side at the moment
     int sector = channelIter->second._sector;
+    int ignoreForFit = channelIter->second._ignoreForFit;
     double x = channelIter->second._x;
     double y = channelIter->second._y;
 
@@ -650,7 +684,7 @@ void EventWindow::DrawFront(int side)
     int channel1=channelIter->first.second.first;
     int channel2=channelIter->first.second.second;
 
-    CrvCounter *box = new CrvCounter(side, sector, feb, channel1, channel2, _textPEs[side],
+    CrvCounter *box = new CrvCounter(side, sector, ignoreForFit, feb, channel1, channel2, _textPEs[side],
                                      _padsAdc[side], _padsReco1[side], _padsReco2[side], x, y, xDisplay, yDisplay);
     box->Draw();
     _boxes[side].push_back(box);

@@ -57,8 +57,9 @@ struct ChannelStruct
   int _side;
   int _sector;
   float _x,_y;
-  ChannelStruct() : _side(0), _sector(0), _x(0), _y(0) {}
-  ChannelStruct(int side, int sector, float x, float y) : _side(side), _sector(sector), _x(x), _y(y) {}
+  int _ignoreForFit;
+  ChannelStruct() : _side(0), _sector(0), _x(0), _y(0), _ignoreForFit(0) {}
+  ChannelStruct(int side, int sector, float x, float y, int ignoreForFit) : _side(side), _sector(sector), _x(x), _y(y), _ignoreForFit(ignoreForFit) {}
 };
 typedef std::map<std::pair<int,std::pair<int,int> >, ChannelStruct>  ChannelMapType;   //feb,(channel1,channel2) --> channelStruct
 
@@ -728,6 +729,7 @@ void CrvEvent::TrackFit()
     int channel1=channelIter->first.second.first;
     int channel2=channelIter->first.second.second;
     int sector=channelIter->second._sector;
+    int ignoreForFit=channelIter->second._ignoreForFit;
     float x=channelIter->second._x;
     float y=channelIter->second._y;
 
@@ -747,12 +749,15 @@ void CrvEvent::TrackFit()
     float PE  = PE1+PE2;
     if(PE<_PEcut) continue;
 
-    sumX[0] +=x*PE;
-    sumY[0] +=y*PE;
-    sumXY[0]+=x*y*PE;
-    sumYY[0]+=y*y*PE;
-    _trackPEs[0]+=PE;
-    ++_trackPoints[0];
+    if(ignoreForFit==0)
+    {
+      sumX[0] +=x*PE;
+      sumY[0] +=y*PE;
+      sumXY[0]+=x*y*PE;
+      sumYY[0]+=y*y*PE;
+      _trackPEs[0]+=PE;
+      ++_trackPoints[0];
+    }
 
     if(sector!=0)
     {
@@ -782,7 +787,11 @@ void CrvEvent::TrackFit()
           int feb=channelIter->first.first;
           int channel1=channelIter->first.second.first;
           int channel2=channelIter->first.second.second;
-          int sector=channelIter->second._sector;
+          int thisSector=channelIter->second._sector;
+          int ignoreForFit=channelIter->second._ignoreForFit;
+          if(sector!=thisSector) continue;
+          if(sector==0 && ignoreForFit!=0) continue;
+
           float x=channelIter->second._x;
           float y=channelIter->second._y;
 
@@ -818,25 +827,29 @@ void CrvEvent::ReadChannelMap(const std::string &channelMapFile)
   getline(file,header);
   bool hasSectors=false;
   if(header.find("sector")!=std::string::npos) hasSectors=true;
+  bool hasIgnoreForFit=false;
+  if(header.find("ignoreForFit")!=std::string::npos) hasIgnoreForFit=true;
 
   int febA, channelA1, channelA2;
   int febB, channelB1, channelB2;
   float x, y;
   int sector=0;
+  int ignoreForFit=0;
   _numberOfSectors=0;
 
   while(file >> febA >> channelA1 >> channelA2 >> febB >> channelB1 >> channelB2 >> x >> y)
   {
     if(hasSectors) file >> sector;
     if(sector>_numberOfSectors) _numberOfSectors=sector;
+    if(hasIgnoreForFit) file >> ignoreForFit;
 
     std::pair<int,int> channelPairA(channelA1,channelA2);
     std::pair<int,int> channelPairB(channelB1,channelB2);
     std::pair<int,std::pair<int,int> > counterA(febA,channelPairA);
     std::pair<int,std::pair<int,int> > counterB(febB,channelPairB);
     std::pair<float,float> counterPos(x,y);
-    _channelMap[counterA]=ChannelStruct(0,sector,x,y);
-    _channelMap[counterB]=ChannelStruct(1,sector,x,y);
+    _channelMap[counterA]=ChannelStruct(0,sector,x,y,ignoreForFit);
+    _channelMap[counterB]=ChannelStruct(1,sector,x,y,ignoreForFit);
   }
 
   file.close();
