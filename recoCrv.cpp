@@ -52,7 +52,15 @@ struct TemperatureCorrections
   double referenceTemperatureFEB{40.0};   //degC
 };
 
-typedef std::map<std::pair<int,std::pair<int,int> >, std::pair<int,std::pair<float,float> > >  ChannelMapType;   //feb,(channel1,channel2) --> side,(x,y)
+struct ChannelStruct
+{
+  int _side;
+  int _sector;
+  float _x,_y;
+  ChannelStruct() : _side(0), _sector(0), _x(0), _y(0) {}
+  ChannelStruct(int side, int sector, float x, float y) : _side(side), _sector(sector), _x(x), _y(y) {}
+};
+typedef std::map<std::pair<int,std::pair<int,int> >, ChannelStruct>  ChannelMapType;   //feb,(channel1,channel2) --> channelStruct
 
 class Calibration
 {
@@ -319,7 +327,8 @@ class CrvEvent
 {
   public:
   CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples,
-           TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections, float PEcut);
+           TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections, float PEcut,
+           const std::string &channelMapFile);
   void     Reconstruct(int entry, const Calibration &calib);
   TCanvas *GetCanvas(int feb, int channel) {return _canvas[feb*_channelsPerFeb+channel];}
   TH1F    *GetHistPEs(int i, int feb, int channel)
@@ -391,17 +400,19 @@ class CrvEvent
   std::vector<TGraph*>  _histTemperatures;
   std::vector<TGraph*>  _histTemperaturesFEB;
 
-  //for track fits
+  //for track fits (arrays are sorted by sectors; entry 0 is used for all sectors)
   ChannelMapType _channelMap;
-  float _PEcut;
-  float _trackSlope;      //using slope=dx/dy to avoid inf for vertical tracks
-  float _trackIntercept;  //x value, where y=0
-  float _trackChi2;
-  int   _trackPoints;
-  float _trackPEs;
+  int    _numberOfSectors;
+  float  _PEcut;
+  float *_trackSlope;      //using slope=dx/dy to avoid inf for vertical tracks
+  float *_trackIntercept;  //x value, where y=0
+  float *_trackChi2;
+  int   *_trackPoints;
+  float *_trackPEs;
 };
 CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples,
-                   TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections, float PEcut) :
+                   TTree *tree, TTree *recoTree, const TemperatureCorrections &temperatureCorrections, float PEcut,
+                   const std::string &channelMapFile) :
                    _runNumber(runNumber), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples),
                    _tree(tree), _recoTree(recoTree), _tc(temperatureCorrections), _PEcut(PEcut)
 {
@@ -462,6 +473,14 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   _recoStartBinReflectedPulse            = new int[_numberOfFebs*_channelsPerFeb];
   _recoEndBinReflectedPulse              = new int[_numberOfFebs*_channelsPerFeb];
 
+  _numberOfSectors=0;
+  if(channelMapFile!="") ReadChannelMap(channelMapFile);
+  _trackSlope     = new float[_numberOfSectors+1];
+  _trackIntercept = new float[_numberOfSectors+1];
+  _trackChi2      = new float[_numberOfSectors+1];
+  _trackPoints    = new int[_numberOfSectors+1];
+  _trackPEs       = new float[_numberOfSectors+1];
+
   recoTree->Branch("runNumber", &_run, "runNumber/I");
   recoTree->Branch("subrunNumber", &_subrun, "subrunNumber/I");
   recoTree->Branch("spillIndex", &_spillIndex, "spillIndex/I");
@@ -493,11 +512,11 @@ CrvEvent::CrvEvent(const std::string &runNumber, const int numberOfFebs, const i
   recoTree->Branch("LEtimeReflectedPulse", _LEtimeReflectedPulse, Form("LEtimeReflectedPulse[%i][%i]/F",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoStartBinReflectedPulse", _recoStartBinReflectedPulse, Form("recoStartBinReflectedPulse[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
   recoTree->Branch("recoEndBinReflectedPulse", _recoEndBinReflectedPulse, Form("recoEndBinReflectedPulse[%i][%i]/I",_numberOfFebs,_channelsPerFeb));
-  recoTree->Branch("trackSlope", &_trackSlope, "trackSlope/F");
-  recoTree->Branch("trackIntercept", &_trackIntercept, "trackIntercept/F");
-  recoTree->Branch("trackChi2", &_trackChi2, "trackChi2/F");
-  recoTree->Branch("trackPoints", &_trackPoints, "trackPoints/I");
-  recoTree->Branch("trackPEs", &_trackPEs, "trackPEs/F");
+  recoTree->Branch("trackSlope", _trackSlope, Form("trackSlope[%i]/F",_numberOfSectors+1));
+  recoTree->Branch("trackIntercept", _trackIntercept, Form("trackIntercept[%i]/F",_numberOfSectors+1));
+  recoTree->Branch("trackChi2", _trackChi2, Form("trackChi2[%i]/F",_numberOfSectors+1));
+  recoTree->Branch("trackPoints", _trackPoints, Form("trackPoints[%i]/I",_numberOfSectors+1));
+  recoTree->Branch("trackPEs", _trackPEs, Form("trackPEs[%i]/F",_numberOfSectors+1));
 
   _canvas.resize(_numberOfFebs*_channelsPerFeb);
   _plot.resize(_numberOfFebs*_channelsPerFeb);
@@ -680,15 +699,27 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
 
 void CrvEvent::TrackFit()
 {
-  float sumX     =0;
-  float sumY     =0;
-  float sumXY    =0;
-  float sumYY    =0;
-  _trackSlope    =0;
-  _trackIntercept=0;
-  _trackPEs      =0;
-  _trackPoints   =0;
-  _trackChi2     =-1;
+  std::vector<float> sumX;
+  std::vector<float> sumY;
+  std::vector<float> sumXY;
+  std::vector<float> sumYY;
+  sumX.resize(_numberOfSectors+1);
+  sumY.resize(_numberOfSectors+1);
+  sumXY.resize(_numberOfSectors+1);
+  sumYY.resize(_numberOfSectors+1);
+
+  for(int sector=0; sector<=_numberOfSectors; ++sector)
+  {
+    sumX[sector]=0;
+    sumY[sector]=0;
+    sumXY[sector]=0;
+    sumYY[sector]=0;
+    _trackSlope[sector]=0;
+    _trackIntercept[sector]=0;
+    _trackChi2[sector]=-1;
+    _trackPoints[sector]=0;
+    _trackPEs[sector]=0;
+  }
 
   //loop through the channel map
   for(ChannelMapType::iterator channelIter=_channelMap.begin(); channelIter!=_channelMap.end(); ++channelIter)
@@ -696,9 +727,9 @@ void CrvEvent::TrackFit()
     int feb=channelIter->first.first;
     int channel1=channelIter->first.second.first;
     int channel2=channelIter->first.second.second;
-//    float side=channelIter->second.first;
-    float x=channelIter->second.second.first;
-    float y=channelIter->second.second.second;
+    int sector=channelIter->second._sector;
+    float x=channelIter->second._x;
+    float y=channelIter->second._y;
 
     if(feb<0 || feb>=_numberOfFebs) continue;  //feb not in event tree
     if(channel1<0 || channel2<0 || channel1>=_channelsPerFeb || channel2>=_channelsPerFeb) continue;  //channels not in event tree
@@ -716,51 +747,64 @@ void CrvEvent::TrackFit()
     float PE  = PE1+PE2;
     if(PE<_PEcut) continue;
 
-    sumX +=x*PE;
-    sumY +=y*PE;
-    sumXY+=x*y*PE;
-    sumYY+=y*y*PE;
-    _trackPEs+=PE;
-    ++_trackPoints;
+    sumX[0] +=x*PE;
+    sumY[0] +=y*PE;
+    sumXY[0]+=x*y*PE;
+    sumYY[0]+=y*y*PE;
+    _trackPEs[0]+=PE;
+    ++_trackPoints[0];
+
+    if(sector!=0)
+    {
+      sumX[sector] +=x*PE;
+      sumY[sector] +=y*PE;
+      sumXY[sector]+=x*y*PE;
+      sumYY[sector]+=y*y*PE;
+      _trackPEs[sector]+=PE;
+      ++_trackPoints[sector];
+    }
   }
 
 //do the fit
-  if(_trackPEs>=2*_PEcut && _trackPoints>1)
+  for(int sector=0; sector<=_numberOfSectors; ++sector)
   {
-    if(_trackPEs*sumYY-sumY*sumY!=0)
+    if(_trackPEs[sector]>=2*_PEcut && _trackPoints[sector]>1)
     {
-      _trackSlope=(_trackPEs*sumXY-sumX*sumY)/(_trackPEs*sumYY-sumY*sumY);
-      _trackIntercept=(sumX-_trackSlope*sumY)/_trackPEs;
-
-      //find chi2
-      _trackChi2=0;
-      for(ChannelMapType::iterator channelIter=_channelMap.begin(); channelIter!=_channelMap.end(); ++channelIter)
+      if(_trackPEs[sector]*sumYY[sector]-sumY[sector]*sumY[sector]!=0)
       {
-        int feb=channelIter->first.first;
-        int channel1=channelIter->first.second.first;
-        int channel2=channelIter->first.second.second;
-//        float side=channelIter->second.first;
-        float x=channelIter->second.second.first;
-        float y=channelIter->second.second.second;
+        _trackSlope[sector]=(_trackPEs[sector]*sumXY[sector]-sumX[sector]*sumY[sector])/(_trackPEs[sector]*sumYY[sector]-sumY[sector]*sumY[sector]);
+        _trackIntercept[sector]=(sumX[sector]-_trackSlope[sector]*sumY[sector])/_trackPEs[sector];
 
-        if(feb<0 || feb>=_numberOfFebs) continue;  //feb not in event tree
-        if(channel1<0 || channel2<0 || channel1>=_channelsPerFeb || channel2>=_channelsPerFeb) continue;  //channels not in event tree
+        //find chi2
+        _trackChi2[sector]=0;
+        for(ChannelMapType::iterator channelIter=_channelMap.begin(); channelIter!=_channelMap.end(); ++channelIter)
+        {
+          int feb=channelIter->first.first;
+          int channel1=channelIter->first.second.first;
+          int channel2=channelIter->first.second.second;
+          int sector=channelIter->second._sector;
+          float x=channelIter->second._x;
+          float y=channelIter->second._y;
 
-        int index1=feb*_channelsPerFeb+channel1;  //used for _variable[i][j]
-        int index2=feb*_channelsPerFeb+channel2;  //used for _variable[i][j]
+          if(feb<0 || feb>=_numberOfFebs) continue;  //feb not in event tree
+          if(channel1<0 || channel2<0 || channel1>=_channelsPerFeb || channel2>=_channelsPerFeb) continue;  //channels not in event tree
 
-        float PE1     = _PEsTemperatureCorrected[index1];
-        float PE2     = _PEsTemperatureCorrected[index2];
-        if(PE1<=0 || _fitStatus[index1]==0) PE1=0;
-        if(PE2<=0 || _fitStatus[index2]==0) PE2=0;
+          int index1=feb*_channelsPerFeb+channel1;  //used for _variable[i][j]
+          int index2=feb*_channelsPerFeb+channel2;  //used for _variable[i][j]
 
-        float PE  = PE1+PE2;
-        if(PE<_PEcut) continue;
+          float PE1     = _PEsTemperatureCorrected[index1];
+          float PE2     = _PEsTemperatureCorrected[index2];
+          if(PE1<=0 || _fitStatus[index1]==0) PE1=0;
+          if(PE2<=0 || _fitStatus[index2]==0) PE2=0;
 
-        float xFit = _trackSlope*y + _trackIntercept;
-        _trackChi2+=(xFit-x)*(xFit-x)*PE;  //PE-weighted chi2
+          float PE  = PE1+PE2;
+          if(PE<_PEcut) continue;
+
+          float xFit = _trackSlope[sector]*y + _trackIntercept[sector];
+          _trackChi2[sector]+=(xFit-x)*(xFit-x)*PE;  //PE-weighted chi2
+        }
+        _trackChi2[sector]/=_trackPEs[sector];
       }
-      _trackChi2/=_trackPEs;
     }
   }
 }
@@ -772,20 +816,27 @@ void CrvEvent::ReadChannelMap(const std::string &channelMapFile)
 
   std::string header;
   getline(file,header);
+  bool hasSectors=false;
+  if(header.find("sector")!=std::string::npos) hasSectors=true;
 
   int febA, channelA1, channelA2;
   int febB, channelB1, channelB2;
   float x, y;
+  int sector=0;
+  _numberOfSectors=0;
 
   while(file >> febA >> channelA1 >> channelA2 >> febB >> channelB1 >> channelB2 >> x >> y)
   {
+    if(hasSectors) file >> sector;
+    if(sector>_numberOfSectors) _numberOfSectors=sector;
+
     std::pair<int,int> channelPairA(channelA1,channelA2);
     std::pair<int,int> channelPairB(channelB1,channelB2);
     std::pair<int,std::pair<int,int> > counterA(febA,channelPairA);
     std::pair<int,std::pair<int,int> > counterB(febB,channelPairB);
     std::pair<float,float> counterPos(x,y);
-    _channelMap[counterA]=std::pair<int, std::pair<float,float> >(0,counterPos);
-    _channelMap[counterB]=std::pair<int, std::pair<float,float> >(1,counterPos);
+    _channelMap[counterA]=ChannelStruct(0,sector,x,y);
+    _channelMap[counterB]=ChannelStruct(1,sector,x,y);
   }
 
   file.close();
@@ -1572,8 +1623,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
   treeSpills->GetEntry(0);  //to read the numberOfFebs, channelsPerFeb, and numberOfSamples
 
   Calibration calib(calibFileName, numberOfFebs, channelsPerFeb);
-  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, tc, PEcut);
-  if(channelMapFile!="") event.ReadChannelMap(channelMapFile);
+  CrvEvent event(runNumber, numberOfFebs, channelsPerFeb, numberOfSamples, tree, recoTree, tc, PEcut, channelMapFile);
 
   int nEvents = tree->GetEntries();
 //std::cout<<"USING A WRONG NUMBER OF EVENTS"<<std::endl;
