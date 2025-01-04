@@ -5,6 +5,7 @@
 #include <TGResourcePool.h>
 #include <TBox.h>
 #include <vector>
+#include <map>
 #include <iostream>
 #include <cstdlib>
 #include <CLHEP/Vector/ThreeVector.h>
@@ -12,17 +13,17 @@
 class CrvCounter : public TWbox
 {
   public:
-  CrvCounter(int side, int feb, int channel1, int channel2, TText *textPEs,  
-             TPad *padAdc, TPad *padReco1, TPad *padReco2, double x, double y) :
-             TWbox(x-25.65, y-9.9, x+25.65, y+9.9, 0,(feb>=0?3:1),1), 
-             _side(side), _feb(feb), _channel1(channel1), _channel2(channel2), _PE1(0), _PE2(0),
+  CrvCounter(int side, int sector, int feb, int channel1, int channel2, TText *textPEs,
+             TPad *padAdc, TPad *padReco1, TPad *padReco2, double x, double y, double xDisplay, double yDisplay) :
+             TWbox(xDisplay-25.65, yDisplay-9.9, xDisplay+25.65, yDisplay+9.9, 0,(feb>=0?3:1),1),
+             _side(side), _sector(sector), _feb(feb), _channel1(channel1), _channel2(channel2), _PE1(0), _PE2(0),
              _x(x), _y(y), _textPEs(textPEs), _padAdc(padAdc)
   {
     _padReco[0]=padReco1;
     _padReco[1]=padReco2;
     _fitStatus[0]=0;
     _fitStatus[1]=0;
-  } 
+  }
   void GetChannels(int &feb, int &channel1, int &channel2)
   {
     feb=_feb; channel1=_channel1; channel2=_channel2;
@@ -30,6 +31,10 @@ class CrvCounter : public TWbox
   void GetPos(float &x, float &y)
   {
     x=_x; y=_y;
+  }
+  int GetSector()
+  {
+    return _sector;
   }
   virtual void ExecuteEvent(Int_t event, Int_t px, Int_t py)
   {
@@ -163,16 +168,16 @@ class CrvCounter : public TWbox
       gPad->GetCanvas()->Update();
     }
   }
-  void SetPEs(int PE1, int PE2) 
+  void SetPEs(int PE1, int PE2)
   {
     _PE1=PE1; _PE2=PE2;
   }
-//  void SetADCs(int adc1[], int adc2[]) 
-  void SetADCs(short adc1[], short adc2[]) 
+//  void SetADCs(int adc1[], int adc2[])
+  void SetADCs(short adc1[], short adc2[])
   {
     _adc[0].clear();
     _adc[1].clear();
-    for(int i=0; i<127; i++) 
+    for(int i=0; i<127; i++)
     {
       _adc[0].push_back(adc1[i]);
       _adc[1].push_back(adc2[i]);
@@ -205,6 +210,7 @@ class CrvCounter : public TWbox
 
   private:
   int _side;
+  int _sector;
   int _feb;
   int _channel1, _channel2;
   int _PE1, _PE2;
@@ -218,7 +224,7 @@ class CrvCounter : public TWbox
   TPad  *_padReco[2];
 };
 
-class EventWindow : public TGMainFrame 
+class EventWindow : public TGMainFrame
 {
   public:
   EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::string &runFileName, const std::string &channelMapFileName);
@@ -245,10 +251,10 @@ class EventWindow : public TGMainFrame
   int                 _channelsPerFeb;
   int                 _numberOfSamples;
 
-  float  _minX;
-  float  _maxX;
-  float  _minY;
-  float  _maxY;
+  std::map<int,float>  _minX;
+  std::map<int,float>  _maxX;
+  std::map<int,float>  _minY;
+  std::map<int,float>  _maxY;
   float  _centerX;
 
   TPad*                     _pads[2];
@@ -256,7 +262,7 @@ class EventWindow : public TGMainFrame
   TPad*                     _padsReco1[2];
   TPad*                     _padsReco2[2];
   std::vector<CrvCounter*>  _boxes[2];
-  TLine*                    _fit[2];
+  std::map<int,TLine*>      _fit[2];  //sorted by sector (entry 0 is used for all sectors)
   TText*                    _textPEs[2];
   TText*                    _textTotalPEs[2];
 
@@ -267,8 +273,17 @@ class EventWindow : public TGMainFrame
   TGLabel*            _textEventNumber;
   TGCheckButton*      _fitButton;
 
-  std::string                                                                            _channelMapFileName;
-  std::map<std::pair<int,std::pair<int,int> >, std::pair<int,std::pair<float,float> > >  _channelMap;   //feb,(channel1,channel2) --> side,(x,y)
+  struct channelStruct
+  {
+    int _side;
+    int _sector;
+    float _x,_y;
+    channelStruct() : _side(0), _sector(0), _x(0), _y(0) {}
+    channelStruct(int side, int sector, float x, float y) : _side(side), _sector(sector), _x(x), _y(y) {}
+  };
+
+  std::string                                                  _channelMapFileName;
+  std::map<std::pair<int,std::pair<int,int> >, channelStruct>  _channelMap;   //feb,(channel1,channel2) --> channelStruct
 
   ClassDef(EventWindow, 0)
 };
@@ -332,33 +347,53 @@ void EventWindow::ReadChannelMap()
 
   string header;
   getline(file,header);
+  bool hasSectors=false;
+  if(header.find("sector")!=string::npos) hasSectors=true;
 
   int febA, channelA1, channelA2;
   int febB, channelB1, channelB2;
   float x, y;
-
-  _minX=NAN;
-  _maxX=NAN;
-  _minY=NAN;
-  _maxY=NAN;
+  int sector=0;
 
   while(file >> febA >> channelA1 >> channelA2 >> febB >> channelB1 >> channelB2 >> x >> y)
   {
+    if(hasSectors) file >> sector;
     std::pair<int,int> channelPairA(channelA1,channelA2);
     std::pair<int,int> channelPairB(channelB1,channelB2);
     std::pair<int,std::pair<int,int> > counterA(febA,channelPairA);
     std::pair<int,std::pair<int,int> > counterB(febB,channelPairB);
-    std::pair<float,float> counterPos(x,y);
-    _channelMap[counterA]=std::pair<int, std::pair<float,float> >(0,counterPos);
-    _channelMap[counterB]=std::pair<int, std::pair<float,float> >(1,counterPos);
 
-    if(x<_minX || isnan(_minX)) _minX=x;
-    if(x>_maxX || isnan(_maxX)) _maxX=x;
-    if(y<_minY || isnan(_minY)) _minY=y;
-    if(y>_maxY || isnan(_maxY)) _maxY=y;
+    _channelMap[counterA]=channelStruct(0,sector,x,y);
+    _channelMap[counterB]=channelStruct(1,sector,x,y);
+
+    if(_minX.find(0)==_minX.end())
+    {
+      _minX[0]=x;
+      _maxX[0]=x;
+      _minY[0]=y;
+      _maxY[0]=y;
+    }
+
+    if(_minX.find(sector)==_minX.end())
+    {
+      _minX[sector]=x;
+      _maxX[sector]=x;
+      _minY[sector]=y;
+      _maxY[sector]=y;
+    }
+
+    if(x<_minX[0]) _minX[0]=x;
+    if(x>_maxX[0]) _maxX[0]=x;
+    if(y<_minY[0]) _minY[0]=y;
+    if(y>_maxY[0]) _maxY[0]=y;
+
+    if(x<_minX[sector]) _minX[sector]=x;
+    if(x>_maxX[sector]) _maxX[sector]=x;
+    if(y<_minY[sector]) _minY[sector]=y;
+    if(y>_maxY[sector]) _maxY[sector]=y;
   }
 
-  file.close(); 
+  file.close();
 }
 
 bool EventWindow::DoEvent()
@@ -398,12 +433,22 @@ bool EventWindow::DoEvent()
   _textPEs[1]->SetTitle("");
 
   float totalPEs[2]={0,0};
-  float sumX   =0;
-  float sumY   =0;
-  float sumXY  =0;
-  float sumYY  =0;
-  float sumPEs =0;
-  int   nPoints=0;
+
+  //track fit variables, sorted by sector (entry of 0 uses all sectors)
+  std::map<int,float> sumX;
+  std::map<int,float> sumY;
+  std::map<int,float> sumXY;
+  std::map<int,float> sumYY;
+  std::map<int,float> sumPEs;
+  std::map<int,int>   nPoints;
+
+  sumX[0]=0;
+  sumY[0]=0;
+  sumXY[0]=0;
+  sumYY[0]=0;
+  sumPEs[0]=0;
+  nPoints[0]=0;
+
   for(int side=0; side<2; ++side)
   {
     for(auto boxIter=_boxes[side].begin(); boxIter!=_boxes[side].end(); ++boxIter)
@@ -431,12 +476,32 @@ bool EventWindow::DoEvent()
       {
         float x,y;
         counter->GetPos(x,y);
-        sumX +=x*PE;
-        sumY +=y*PE;
-        sumXY+=x*y*PE;
-        sumYY+=y*y*PE;
-        ++nPoints;
-        sumPEs+=PE;
+        sumX[0] +=x*PE;
+        sumY[0] +=y*PE;
+        sumXY[0]+=x*y*PE;
+        sumYY[0]+=y*y*PE;
+        sumPEs[0]+=PE;
+        ++nPoints[0];
+
+        int sector=counter->GetSector();
+        if(sector!=0)
+        {
+          if(nPoints.find(sector)==nPoints.end())
+          {
+            sumX[sector]=0;
+            sumY[sector]=0;
+            sumXY[sector]=0;
+            sumYY[sector]=0;
+            sumPEs[sector]=0;
+            nPoints[sector]=0;
+          }
+          sumX[sector] +=x*PE;
+          sumY[sector] +=y*PE;
+          sumXY[sector]+=x*y*PE;
+          sumYY[sector]+=y*y*PE;
+          sumPEs[sector]+=PE;
+          ++nPoints[sector];
+        }
       }
 
       _pads[side]->cd();
@@ -467,31 +532,38 @@ bool EventWindow::DoEvent()
   }
 
 //fit part
-  for(int side=0; side<2; ++side)
+  for(auto sectorIter=nPoints.begin(); sectorIter!=nPoints.end(); ++sectorIter)
   {
-    _pads[side]->cd();
-    if(_fit[side]!=NULL) {delete _fit[side]; _fit[side]=NULL;}
-  }
-  if(_fitButton->IsOn() && sumPEs>=10 && nPoints>1)
-  {
-    if(sumPEs*sumYY-sumY*sumY!=0)
+    int sector=sectorIter->first;
+    for(int side=0; side<2; ++side)
     {
-      float slope=(sumPEs*sumXY-sumX*sumY)/(sumPEs*sumYY-sumY*sumY);
-      float intercept=(sumX-slope*sumY)/sumPEs;
-      float x1=intercept+slope*_minY;
-      float x2=intercept+slope*_maxY;
-      for(int side=0; side<2; ++side)
+      _pads[side]->cd();
+      if(_fit[side].find(sector)!=_fit[side].end())
       {
-        if(side==1)
+        if(_fit[side][sector]!=NULL) {delete _fit[side][sector]; _fit[side][sector]=NULL;}
+      }
+    }
+    if(_fitButton->IsOn() && sumPEs[sector]>=10 && nPoints[sector]>1)
+    {
+      if(sumPEs[sector]*sumYY[sector]-sumY[sector]*sumY[sector]!=0)
+      {
+        float slope=(sumPEs[sector]*sumXY[sector]-sumX[sector]*sumY[sector])/(sumPEs[sector]*sumYY[sector]-sumY[sector]*sumY[sector]);
+        float intercept=(sumX[sector]-slope*sumY[sector])/sumPEs[sector];
+        float x1=intercept+slope*(_minY[sector]-20);
+        float x2=intercept+slope*(_maxY[sector]+20);
+        for(int side=0; side<2; ++side)
         {
-          x1=_centerX+(_centerX-x1);
-          x2=_centerX+(_centerX-x2);
+          if(side==1)
+          {
+            x1=_centerX+(_centerX-x1);
+            x2=_centerX+(_centerX-x2);
+          }
+          _pads[side]->cd();
+          _fit[side][sector] = new TLine(x1,_minY[sector]-20,x2,_maxY[sector]+20);
+          _fit[side][sector]->SetLineColor(sector==0?3:6);
+          _fit[side][sector]->SetLineWidth(3);
+          _fit[side][sector]->Draw();
         }
-        _pads[side]->cd();
-        _fit[side] = new TLine(x1,_minY,x2,_maxY);
-        _fit[side]->SetLineColor(3);
-        _fit[side]->SetLineWidth(3);
-        _fit[side]->Draw();
       }
     }
   }
@@ -537,8 +609,8 @@ void EventWindow::DrawFront(int side)
   _pads[side]->cd();
 
   TGraph *g = new TGraph();
-  g->SetPoint(0,_minX-20,_minY-20);
-  g->SetPoint(1,_maxX+20,_maxY+20);
+  g->SetPoint(0,_minX[0]-20,_minY[0]-20);
+  g->SetPoint(1,_maxX[0]+20,_maxY[0]+20);
   g->GetXaxis()->SetTitle("x [mm]");
   g->GetYaxis()->SetTitle("y [mm]");
   g->Draw(side==0?"A P":"A P RX");
@@ -566,25 +638,28 @@ void EventWindow::DrawFront(int side)
 
   for(auto channelIter=_channelMap.begin(); channelIter!=_channelMap.end(); ++channelIter)
   {
-    if(channelIter->second.first!=side) continue; //drawing the other side at the moment
-    double x = channelIter->second.second.first;
-    double y = channelIter->second.second.second;
-    if(side==1) x=_centerX+(_centerX-x);
+    if(channelIter->second._side!=side) continue; //drawing the other side at the moment
+    int sector = channelIter->second._sector;
+    double x = channelIter->second._x;
+    double y = channelIter->second._y;
+
+    double xDisplay=(side==1?_centerX+(_centerX-x):x);
+    double yDisplay=y;
 
     int feb=channelIter->first.first;
     int channel1=channelIter->first.second.first;
     int channel2=channelIter->first.second.second;
 
-    CrvCounter *box = new CrvCounter(side, feb, channel1, channel2, _textPEs[side], 
-                                     _padsAdc[side], _padsReco1[side], _padsReco2[side], x, y);
+    CrvCounter *box = new CrvCounter(side, sector, feb, channel1, channel2, _textPEs[side],
+                                     _padsAdc[side], _padsReco1[side], _padsReco2[side], x, y, xDisplay, yDisplay);
     box->Draw();
     _boxes[side].push_back(box);
-  }
 
-  for(int side=0; side<2; ++side) _fit[side] = NULL;
+    for(int side=0; side<2; ++side) _fit[side][sector] = NULL;
+  }
 }
 
-EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::string &runFileName, const string &channelMapFileName) : 
+EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::string &runFileName, const string &channelMapFileName) :
                          TGMainFrame(p, w, h), _runFileName(runFileName), _channelMapFileName(channelMapFileName)
 {
    size_t dotPos = _runFileName.rfind('.');
@@ -593,7 +668,7 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    dotPos = runNumberTmp.rfind('.');
    if(dotPos+1>=runNumberTmp.length()) {std::cerr<<"The run file name has an unknown pattern."<<std::endl; return;}
    _runNumber = runNumberTmp.substr(dotPos+1);
-   
+
    _file = new TFile(_runFileName.c_str());
    _tree = (TTree*)_file->Get("run");
    if(_tree==NULL) {std::cerr<<"Could not find event tree."<<std::endl; return;}
@@ -613,7 +688,7 @@ EventWindow::EventWindow(const TGWindow *p, UInt_t w, UInt_t h, const std::strin
    {
      float r,g,b;
      new TColor(i+2000, (100.0-i)/100.0, (100.0-i)/100.0, 1.0);
-   } 
+   }
 
    TGHorizontalFrame *buttonFrame = new TGHorizontalFrame(this, 1600, 200);
    AddFrame(buttonFrame);
