@@ -565,17 +565,16 @@ bool EventWindow::DoEvent()
   }
 
 //fit part
+  for(int side=0; side<2; ++side)
+  {
+    _pads[side]->cd();
+    //delete old fit lines
+    for(auto oldFitIter=_fit[side].begin(); oldFitIter!=_fit[side].end(); ++oldFitIter) {delete oldFitIter->second;}
+    _fit[side].clear();
+  }
   for(auto sectorIter=nPoints.begin(); sectorIter!=nPoints.end(); ++sectorIter)
   {
     int sector=sectorIter->first;
-    for(int side=0; side<2; ++side)
-    {
-      _pads[side]->cd();
-      if(_fit[side].find(sector)!=_fit[side].end())
-      {
-        if(_fit[side][sector]!=NULL) {delete _fit[side][sector]; _fit[side][sector]=NULL;}
-      }
-    }
     if(_fitButton->IsOn() && sumPEs[sector]>=10 && nPoints[sector]>1)
     {
       if(sumPEs[sector]*sumYY[sector]-sumY[sector]*sumY[sector]!=0)
