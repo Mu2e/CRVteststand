@@ -69,7 +69,7 @@ class CrvEvent
   int _numberOfFebs;
   int _channelsPerFeb;
   int _numberOfSamples;
-  
+
   TTree *_tree;
 
   double _noiseThreshold;
@@ -100,7 +100,7 @@ class CrvEvent
   std::vector<int>      _nNoiseHits;
 
   //need two instances: for non-temperature corrected and temperature corrected calibrations
-  struct calibStruct  
+  struct calibStruct
   {
     TH1F*   _calibrationHist;
     bool    _noCalibration;
@@ -112,9 +112,9 @@ class CrvEvent
   std::vector<calibStruct> _calibVector[2];
 
 };
-CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples, 
+CrvEvent::CrvEvent(const int numberOfFebs, const int channelsPerFeb, const int numberOfSamples, TTree *tree, const int preSignalSamples,
                    const double noiseThreshold, const double minCalibMaxBin, const TemperatureCorrections &temperatureCorrections) :
-                   _numberOfPreSignalSamples(preSignalSamples), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples), 
+                   _numberOfPreSignalSamples(preSignalSamples), _numberOfFebs(numberOfFebs), _channelsPerFeb(channelsPerFeb), _numberOfSamples(numberOfSamples),
                    _tree(tree), _noiseThreshold(noiseThreshold), _minCalibMaxBin(minCalibMaxBin), _tc(temperatureCorrections)
 {
   _lastSpillIndex = new int[_numberOfFebs*_channelsPerFeb];
@@ -209,11 +209,11 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
 
   for(int i=0; i<_numberOfFebs; i++)
   {
-//    if(isnan(_timeSinceSpill[i])) continue;  //for missing FEBs  //OLD
+//    if(std::isnan(_timeSinceSpill[i])) continue;  //for missing FEBs  //OLD
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
-      if(isnan(_timeSinceSpill[index])) continue;  //missing FEB/channel in raw data
+      if(std::isnan(_timeSinceSpill[index])) continue;  //missing FEB/channel in raw data
 
       const short *data = &(_adc[index*_numberOfSamples]);
 
@@ -231,8 +231,8 @@ if(entry%1000==0) std::cout<<"P "<<entry<<std::endl;
         {
           short ADC=data[i*_numberOfPreSignalSamples/numberOfRegions+j];
           average+=ADC;
-          if(ADC<minADC || isnan(minADC)) minADC=ADC;
-          if(ADC>maxADC || isnan(maxADC)) maxADC=ADC;
+          if(ADC<minADC || std::isnan(minADC)) minADC=ADC;
+          if(ADC>maxADC || std::isnan(maxADC)) maxADC=ADC;
         }
         average/=_numberOfPreSignalSamples/numberOfRegions;
         if(maxADC-average>2.5) continue;
@@ -294,11 +294,11 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
 
   for(int i=0; i<_numberOfFebs; i++)
   {
-//    if(isnan(_timeSinceSpill[i])) continue;  //for missing FEBs  //OLD
+//    if(std::isnan(_timeSinceSpill[i])) continue;  //for missing FEBs  //OLD
     for(int j=0; j<_channelsPerFeb; j++)
     {
       int index=i*_channelsPerFeb+j;  //used for _variable[i][j]
-      if(isnan(_timeSinceSpill[index])) continue;  //missing FEB/channel in raw data
+      if(std::isnan(_timeSinceSpill[index])) continue;  //missing FEB/channel in raw data
 
       const short *data = &(_adc[index*_numberOfSamples]);
 
@@ -315,7 +315,7 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
       std::vector<double> waveform;
       std::vector<std::pair<int,bool> > peaks;
       //double sum=0;
-      for(int bin=0; bin<nBins; bin++) 
+      for(int bin=0; bin<nBins; bin++)
       {
         waveform.push_back(data[bin]-pedestal);
         if(bin>1 && bin<nBins-3)  //don't search for peaks too close to the sample start or end
@@ -357,7 +357,7 @@ if(entry%1000==0) std::cout<<"C "<<entry<<std::endl;
         //fill the graph
         double binWidth=1.0/RATE;
         TGraph g;
-        for(int bin=startBin; bin<=endBin; bin++) 
+        for(int bin=startBin; bin<=endBin; bin++)
         {
           double t=bin*binWidth;
           double v=waveform[bin];
@@ -495,7 +495,7 @@ void CrvEvent::CalculateCalibrationConstants(const std::string &pdfFileName, int
       _deadChannels[index]=false;
       _noPedestal[index]=false;
 
-      if(isnan(_pedestals[index]))
+      if(std::isnan(_pedestals[index]))
       {
         _noPedestal[index]=true;
         _canvas[index]->Print(pdfFileName.c_str(), "pdf");
@@ -944,7 +944,7 @@ void process(const std::string &runNumber, const std::string &inFileName, const 
 
   std::ofstream calibFile;
   calibFile.open(calibFileName.c_str(),std::ios_base::trunc);
-	
+
   gSystem->Unlink(pdfFileName.c_str());
   TCanvas c0;
   c0.Print(Form("%s[", pdfFileName.c_str()), "pdf");
@@ -1000,7 +1000,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
   dirFile.close();
 
   bool found=false;
-  for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName)) 
+  for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName))
   {
     const std::string s = dirEntry.path().filename().string();
     const std::string s0 = "crv.parsed.";
@@ -1019,7 +1019,7 @@ void makeFileNames(const std::string &runNumber, std::string &inFileName, std::s
   if(!found)
   {
 //try Ray's version of file names
-    for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName)) 
+    for(const auto& dirEntry : std::experimental::filesystem::directory_iterator(inDirName))
     {
       const std::string s = dirEntry.path().filename().string();
       const std::string s0 = "ntd.mu2e.";
@@ -1112,7 +1112,7 @@ int main(int argc, char **argv)
     if(strcmp(argv[i],"--referenceTempFEB")==0)          tc.referenceTemperatureFEB=atof(argv[i+1]);
   }
 
-  process(runNumber, inFileName, calibFileName, pdfFileName, histFileName, nPEpeaksToFit, preSignalSamples, 
+  process(runNumber, inFileName, calibFileName, pdfFileName, histFileName, nPEpeaksToFit, preSignalSamples,
           pedestalCorrection, noiseThreshold, minCalibMaxBin, tc);
 
   return 0;
