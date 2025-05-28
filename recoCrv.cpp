@@ -40,6 +40,7 @@ const int BOARD_STATUS_REGISTERS=22;
 const int FPGA_BLOCK_REGISTERS=38;
 const int FPGA_BLOCKS=4;
 const float DEFAULT_BETA=16.0;
+const float COUNTER_WIDTH=51.34; //mm
 
 struct TemperatureCorrections
 {
@@ -590,7 +591,7 @@ if(entry%1000==0) std::cout<<"R "<<entry<<std::endl;
       float calibrationFactor = calib.GetCalibrationFactors().at(index);
       float calibrationFactorTemperatureCorrected = calib.GetCalibrationFactorsTemperatureCorrected().at(index);
 
-      if(!isnan(_timeSinceSpill[index]))  //missing FEB/channel in raw data
+      if(!std::isnan(_timeSinceSpill[index]))  //missing FEB/channel in raw data
         reco.PeakFitter(&(_adc[index*_numberOfSamples]), _numberOfSamples, pedestal, calibrationFactor, draw);
 
       //main pulse
@@ -789,7 +790,7 @@ void CrvEvent::TrackFit()
           int channel2=channelIter->first.second.second;
           int thisSector=channelIter->second._sector;
           int ignoreForFit=channelIter->second._ignoreForFit;
-          if(sector!=thisSector) continue;
+          if(sector!=thisSector && sector!=0) continue;
           if(sector==0 && ignoreForFit!=0) continue;
 
           float x=channelIter->second._x;
@@ -812,7 +813,7 @@ void CrvEvent::TrackFit()
           float xFit = _trackSlope[sector]*y + _trackIntercept[sector];
           _trackChi2[sector]+=(xFit-x)*(xFit-x)*PE;  //PE-weighted chi2
         }
-        _trackChi2[sector]/=_trackPEs[sector];
+        _trackChi2[sector]/=(COUNTER_WIDTH*COUNTER_WIDTH/12.0)*(_trackPEs[sector]/_trackPoints[sector]);
       }
     }
   }
@@ -957,7 +958,7 @@ void LandauGauss(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2, 
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = fit.Integral(0,150)/h.GetBinWidth(1);  //need to divide by bin width.
+    signals = fit.Integral(0,150,1e-3)/h.GetBinWidth(1);  //need to divide by bin width.
                                                      //if the bin width is 2 and one has e.g. 20 events for 50PEs and 20 events for 51PEs,
                                                      //the combined bin of x=50/51 gets 40 entries and the integral assumes that there are 40 entries for x=50 and x=51.
     error = fit.GetParError(1);
@@ -1004,7 +1005,7 @@ void Poisson(TH1F &h, float &mpv, float &fwhm, float &signals, float &chi2, floa
     float leftX = fit.GetX(halfMaximum,0.0,mpv);
     float rightX = fit.GetX(halfMaximum,mpv,10.0*mpv);
     fwhm = rightX-leftX;
-    signals = fit.Integral(0,150)/h.GetBinWidth(1); //explanation see Landau-Gauss
+    signals = fit.Integral(0,150,1e-3)/h.GetBinWidth(1); //explanation see Landau-Gauss
     error = fit.GetParError(1);
     if(fit.GetParameter(2)!=0) error/=fit.GetParameter(2);
 }
