@@ -19,10 +19,12 @@ import filepath
 
 import pandas as pd
 
-def PortToDF(fileList, additional_dict = None):
+def PortToDF(fileList, additional_dict = None, verbose = False):
     df = pd.DataFrame()
 
     for index, filename in enumerate(fileList):
+        if verbose:
+            print("Opening "+filename)
         runNum = filepath.filenameparser(filename, 'run') 
         subrunNum = filepath.filenameparser(filename, 'subrun') 
 
