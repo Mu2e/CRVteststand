@@ -7,7 +7,9 @@ import time
 import subprocess
 import multiprocessing as mp
 
-gpvmPool = ["mu2egpvm01.fnal.gov", "mu2egpvm03.fnal.gov"]
+LIMIT_BYTES = 20 * 1024**3 # max file size allowed
+
+gpvmPool = ["mu2egpvm04.fnal.gov", "mu2egpvm05.fnal.gov"]
 gpvmUsgCount = mp.Manager().Array('i',[0, 0])
 lock = mp.Manager().Lock()
 userName = "mu2epro"
@@ -24,6 +26,17 @@ print ("Max transmission per GPVM is", nMaxProcessPerGpvm)
 fileSpec = sys.argv[1]
 filelist = glob.glob(fileSpec)
 print (len(filelist), "files to transmit...\n")
+
+for tfile in filelist:
+    try:
+        size = os.path.getsize(tfile)
+    except OSError as e:
+        print(f"ERROR: Cannot access '{tfile}': {e}", file=sys.stderr)
+        sys.exit(1)
+    if size > LIMIT_BYTES:
+        print(f"ERROR: File '{tfile}' is too large: {size / (1024**3):.2f} GiB", file=sys.stderr)
+        sys.exit(1)
+
 if len(sys.argv) > 2:
     userName = sys.argv[2]
 

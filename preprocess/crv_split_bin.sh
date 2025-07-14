@@ -14,20 +14,23 @@
 
 
 # where file to be split can be found
-export ID=/mnt/d/data
-# export ID=/mnt/c/data/process
+# export ID=/mnt/d/raw
+export ID=/mnt/c/data/raw
 # where to write splits files
-export OT=/mnt/d/data_split
-# export OT=/mnt/c/data/splitted
+#export OT=/mnt/d/splitted
+export OT=/mnt/c/data/splitted
 # where to find crv_split.py
-export SOURCEDIR=/mnt/d
+# export SOURCEDIR=/mnt/d
+export SOURCEDIR=/mnt/c/data
 
 for FF in $( ls $ID )
 #for FF in RUN_FEB_101_TB202201071311_GeV_Kcnt_BV_900-900-900-900-Gain_test_deg_x_z_degF.data
 do
     echo "**** $FF"
     INFS=$ID/$FF
+    #echo "**** $INFS"
     NFIELDS=$( echo $FF | awk -F. '{print NF}' )
+    #echo "**** $NFIELDS"
 
     if [ $NFIELDS -eq 6 ]; then  # standard format
         RR=$(echo $FF | awk -F. '{print $5}' | awk -F_ '{print $1}' | sed 's/^0*//' )
@@ -44,20 +47,46 @@ do
     fi
 
     OTFS=$OT/$FN
+    #echo "**** $OTFS"
 
     # MB
     SZ=$( ls -l $INFS | awk '{ print int( $5/1025/1024 ) }' )
-    NE=$( grep -c FEB0 $INFS )
+    #echo "**** $SZ"
+    # NE=$( grep -c FEB0 $INFS )
+    NE=$( rg -c FEB0 $INFS ) # use ripgrep
+    #echo "**** $NE"
     NL=$( wc -l $INFS | awk '{print $1}' )
+    #echo "**** $NL"
 
     FTYPE="aging"
-    NSPLIT=1000
-    if [[ "$FF" =~ "crvled" ]]; then
-        FTYPE="led"
-        NSPLIT=5
+    NSPLITSUPPLIED="${1:-0}"
+    NSPLIT=0
+    if [ $NSPLITSUPPLIED -le 0 ]; then
+        echo "Using default spills per subrun"
+        if [[ "$FF" =~ "crvled" ]]; then
+            FTYPE="led"
+            NSPLITSUPPLIED=5
+            echo "Assigning spills per subrun = 5 for file type crvled"
+        else
+            NSPLITSUPPLIED=250
+            echo "Assigning spills per subrun = 250 for file type crvaging"
+        fi
+    else
+        echo "Required spills per subrun: $NSPLITSUPPLIED"
     fi
+
+    NSPLIT=$((NSPLITSUPPLIED))
     NOUT=$((NE/NSPLIT))
     [ $NOUT -lt 1 ] && NOUT=1
+    SZPERSUBRUN=$((SZ/NOUT))
+
+    if [ $SZPERSUBRUN -gt 20000 ]; then
+        echo "ABORT!!! Subrun files are too huge"
+        echo "TOTAL     Size: $SZ    Nspills: $NE"
+        echo "PARSED    Size: $SZPERSUBRUN    Nspills: $NSPLIT"
+        echo "Please adjust # spills per subrun"
+        exit 2
+    fi  
 
     echo "Size $SZ lines: $NL Nev: $NE  file_type: $FTYPE nout: $NOUT"
 
@@ -73,7 +102,7 @@ do
         # note: this code contains file name assumptions
 
         $SOURCEDIR/crv_split_bin.py $INFS $OTFS $NE $NSPLIT
-        #$SOURCEDIR/crv_split_bin.py $INFS $OTFS 1000
+        #$SOURCEDIR/crv_split_bin.py $INFS $OTFS 100
 
     fi
 
